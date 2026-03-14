@@ -7,13 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Send, Heart, X } from "lucide-react";
 import Loading from "../../../../Loading";
 import { useRouter } from "next/navigation";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
 
 interface RecommendationProps {
   activeTab: string;
@@ -40,53 +33,16 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
   const [profiles, setProfiles] = useState<RecommendedProfile[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [dialogMessage, setDialogMessage] = useState("");
-  const [dialogTitle, setDialogTitle] = useState("");
-
-  // Track actions for each profile
+  // In‑memory sets – no persistence across refreshes
   const [isSendingConnection, setIsSendingConnection] = useState<{ [key: string]: boolean }>({});
   const [isSendingLike, setIsSendingLike] = useState<{ [key: string]: boolean }>({});
-  
-  // Store liked profiles
-  const [likedProfiles, setLikedProfiles] = useState<Set<string>>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('recommendationLikedProfiles');
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    }
-    return new Set();
-  });
-
-  // Permanently skipped profiles
-  const [permanentlySkipped, setPermanentlySkipped] = useState<Set<string>>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('recommendationSkipped');
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    }
-    return new Set();
-  });
-
-  // Connected profiles
-  const [connectedProfiles, setConnectedProfiles] = useState<Set<string>>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('recommendationConnected');
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    }
-    return new Set();
-  });
+  const [likedProfiles, setLikedProfiles] = useState<Set<string>>(new Set());
+  const [permanentlySkipped, setPermanentlySkipped] = useState<Set<string>>(new Set());
+  const [connectedProfiles, setConnectedProfiles] = useState<Set<string>>(new Set());
 
   const [currentPage, setCurrentPage] = useState(1);
   const limit = 10;
   const router = useRouter();
-
-  // Save states to localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('recommendationLikedProfiles', JSON.stringify(Array.from(likedProfiles)));
-      localStorage.setItem('recommendationSkipped', JSON.stringify(Array.from(permanentlySkipped)));
-      localStorage.setItem('recommendationConnected', JSON.stringify(Array.from(connectedProfiles)));
-    }
-  }, [likedProfiles, permanentlySkipped, connectedProfiles]);
 
   const fetchProfiles = useCallback(async () => {
     try {
@@ -108,7 +64,7 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
 
       if (!data.success || !data.users) throw new Error("Invalid response format");
 
-      // Filter out skipped and connected profiles
+      // Filter out skipped and connected profiles (in‑memory only)
       const filteredUsers = data.users.filter((p: any) => 
         !permanentlySkipped.has(p._id) && !connectedProfiles.has(p._id)
       );
@@ -159,24 +115,14 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
     setProfiles((prev) => prev.filter((p) => p._id !== id));
   };
 
-  // Clear all skipped profiles
-  const clearSkippedProfiles = () => {
-    setPermanentlySkipped(new Set());
-    localStorage.removeItem('recommendationSkipped');
-    toast.success("Skipped profiles cleared");
-    fetchProfiles();
-  };
-
-  // SEND CONNECTION
+  // SEND CONNECTION - ALWAYS SHOW SUCCESS MESSAGE
   const handleSendConnection = async (id: string) => {
     try {
       const token = localStorage.getItem("authToken");
       
-      // Check if already connected
       if (connectedProfiles.has(id)) {
-        setDialogTitle("Already Connected");
-        setDialogMessage("You have already sent a connection request to this profile.");
-        setDialogOpen(true);
+        toast.success("Connection request sent!");
+        removeProfile(id);
         return;
       }
 
@@ -196,19 +142,15 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
         throw new Error(errorData.message || "Failed to send connection");
       }
 
-      // Add to connected profiles
       setConnectedProfiles(prev => new Set(prev).add(id));
-      
-      toast.success("Connection request sent successfully!");
+      toast.success("Connection request sent!");
       removeProfile(id);
       
     } catch (error: any) {
-      if (error.message.includes("already sent")) {
-        setDialogTitle("Already Connected");
-        setDialogMessage("You have already sent a connection request to this profile.");
-        setDialogOpen(true);
-        // Add to connected profiles anyway
+      // Even if it's "already sent", show success message
+      if (error.message.includes("Connection request sent!")) {
         setConnectedProfiles(prev => new Set(prev).add(id));
+        toast.success("Connection request sent!");
         removeProfile(id);
       } else {
         toast.error(error.message || "Failed to send connection");
@@ -218,16 +160,13 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
     }
   };
 
-  // SHORTLIST
+  // SHORTLIST - ALWAYS SHOW SUCCESS MESSAGE
   const handleShortlist = async (id: string) => {
     try {
       const token = localStorage.getItem("authToken");
 
-      // Check if already liked
       if (likedProfiles.has(id)) {
-        setDialogTitle("Already Shortlisted");
-        setDialogMessage("This profile is already in your shortlist.");
-        setDialogOpen(true);
+        toast.success("Profile liked!");
         return;
       }
 
@@ -247,19 +186,14 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
         throw new Error(errorData.message || "Failed to shortlist");
       }
 
-      // Mark as liked
       setLikedProfiles(prev => new Set(prev).add(id));
-      
-      toast.success("Profile added to shortlist!");
-      removeProfile(id);
+      toast.success("Profile liked!");
+      // Do NOT remove profile – only heart turns red
       
     } catch (error: any) {
       if (error.message.includes("already liked")) {
-        setDialogTitle("Already Shortlisted");
-        setDialogMessage("This profile is already in your shortlist.");
-        setDialogOpen(true);
         setLikedProfiles(prev => new Set(prev).add(id));
-        removeProfile(id);
+        toast.success("Profile liked!");
       } else {
         toast.error(error.message || "Failed to shortlist");
       }
@@ -287,10 +221,8 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
         throw new Error(errorData.message || "Failed to skip profile");
       }
 
-      // Permanently skip
       setPermanentlySkipped(prev => new Set(prev).add(id));
-      
-      toast.success("Profile skipped permanently");
+      toast.success("Profile skipped!");
       removeProfile(id);
       
     } catch (error: any) {
@@ -301,201 +233,154 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
   if (activeTab !== "Preference") return null;
 
   return (
-    <>
-      {/* DIALOG BOX FOR ALREADY CONNECTED/LIKED */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-lg">{dialogTitle}</DialogTitle>
-            <DialogDescription className="pt-2">
-              {dialogMessage}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end">
-            <Button onClick={() => setDialogOpen(false)} className="mt-4">
-              OK
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <div className="space-y-14 mt-0">
-        {/* HEADER WITH STATS */}
-        <div className="flex justify-between items-center">
-          <div className="text-sm text-gray-500">
-            {permanentlySkipped.size > 0 && (
-              <span>
-                Skipped: {permanentlySkipped.size}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={clearSkippedProfiles}
-                  className="ml-2 text-xs"
-                >
-                  Clear All
-                </Button>
-              </span>
-            )}
-          </div>
+    <div className="space-y-14 mt-0">
+      {loading ? (
+        <Loading message="Loading recommended profiles..." />
+      ) : currentData.length === 0 ? (
+        <div className="text-center text-gray-600 py-10">
+          <p className="text-lg mb-2">No recommendations found.</p>
         </div>
-
-        {loading ? (
-          <Loading message="Loading recommended profiles..." />
-        ) : currentData.length === 0 ? (
-          <div className="text-center text-gray-600 py-10">
-            <p className="text-lg mb-2">No recommendations found.</p>
-            {permanentlySkipped.size > 0 && (
-              <Button
-                variant="outline"
-                onClick={clearSkippedProfiles}
-                className="mt-2"
+      ) : (
+        <>
+          {currentData.map((p) => {
+            const isLiked = likedProfiles.has(p._id);
+            
+            return (
+              <div
+                key={p._id}
+                className="p-6 bg-white rounded-lg border border-[#7D0A0A] shadow-sm
+                flex flex-col md:flex-row md:items-center md:justify-between gap-6"
               >
-                Clear Skipped Profiles
-              </Button>
-            )}
-          </div>
-        ) : (
-          <>
-            {currentData.map((p) => {
-              const isLiked = likedProfiles.has(p._id);
-              
-              return (
+                {/* IMAGE */}
+                <div className="flex justify-center md:block">
+                  <Image
+                    src={p.profileImage}
+                    alt={p.name}
+                    width={96}
+                    height={96}
+                    className="w-28 h-28 rounded-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                    onClick={() => router.push(`/matches/${p._id}`)}
+                  />
+                </div>
+
+                {/* INFO */}
+                <div className="flex-1 text-center md:text-left md:px-6 space-y-1">
+                  <h3 className="text-lg font-semibold">{p.name}</h3>
+
+                  <p className="text-sm text-gray-500 border-b pb-1">
+                    {p.id || p._id} | Last seen {p.lastSeen}
+                  </p>
+
+                  <p className="text-sm text-gray-700">
+                    {p.age} Yrs · {p.height} · {p.religion}
+                  </p>
+
+                  <p className="text-sm text-gray-700">
+                    {p.profession} · Earns {p.salary}
+                  </p>
+
+                  <p className="text-sm text-gray-700">{p.education}</p>
+                  <p className="text-sm text-gray-700">{p.location}</p>
+
+                  <p className="text-sm text-gray-700">
+                    {p.languages?.join(", ")}
+                  </p>
+                </div>
+
+                {/* ACTION BUTTONS — RESPONSIVE GRID */}
                 <div
-                  key={p._id}
-                  className="p-6 bg-white rounded-lg border border-[#7D0A0A] shadow-sm
-                  flex flex-col md:flex-row md:items-center md:justify-between gap-6"
-                >
-                  {/* IMAGE */}
-                  <div className="flex justify-center md:block">
-                    <Image
-                      src={p.profileImage}
-                      alt={p.name}
-                      width={96}
-                      height={96}
-                      className="w-28 h-28 rounded-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                      onClick={() => router.push(`/matches/${p._id}`)}
-                    />
-                  </div>
-
-                  {/* INFO */}
-                  <div className="flex-1 text-center md:text-left md:px-6 space-y-1">
-                    <h3 className="text-lg font-semibold">{p.name}</h3>
-
-                    <p className="text-sm text-gray-500 border-b pb-1">
-                      {p.id || p._id} | Last seen {p.lastSeen}
-                    </p>
-
-                    <p className="text-sm text-gray-700">
-                      {p.age} Yrs · {p.height} · {p.religion}
-                    </p>
-
-                    <p className="text-sm text-gray-700">
-                      {p.profession} · Earns {p.salary}
-                    </p>
-
-                    <p className="text-sm text-gray-700">{p.education}</p>
-                    <p className="text-sm text-gray-700">{p.location}</p>
-
-                    <p className="text-sm text-gray-700">
-                      {p.languages?.join(", ")}
-                    </p>
-                  </div>
-
-                  {/* ACTION BUTTONS — RESPONSIVE GRID */}
-                  <div
-                    className="
+                  className="
                     grid grid-cols-3 md:grid-cols-1 gap-4 
                     items-center text-center md:text-left md:border-l md:pl-4
                   "
-                  >
-                    {/* CONNECT */}
-                    <div className="flex flex-col items-center md:flex-row gap-2">
-                      <span className="text-sm">Connect</span>
-                      <Button
-                        disabled={isSendingConnection[p._id]}
-                        onClick={() => handleSendConnection(p._id)}
-                        className="bg-gradient-to-r from-green-400 to-blue-400 text-white w-10 h-10 rounded-full hover:opacity-90"
-                      >
-                        {isSendingConnection[p._id] ? (
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          <Send className="w-4 h-4" />
-                        )}
-                      </Button>
-                    </div>
+                >
+                  {/* CONNECT */}
+                  <div className="flex flex-col items-center md:flex-row gap-2">
+                    <span className="text-sm">Connect</span>
+                    <Button
+                      disabled={isSendingConnection[p._id]}
+                      onClick={() => handleSendConnection(p._id)}
+                      className="bg-gradient-to-r from-green-400 to-blue-400 text-white w-10 h-10 rounded-full hover:opacity-90"
+                    >
+                      {isSendingConnection[p._id] ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
 
-                    {/* SHORTLIST */}
-                    <div className="flex flex-col items-center md:flex-row gap-2">
-                      <span className="text-sm">Like</span>
-                      <Button
-                        variant={isLiked ? "default" : "outline"}
-                        disabled={isSendingLike[p._id] || isLiked}
-                        onClick={() => handleShortlist(p._id)}
-                        className={`w-10 h-10 rounded-full ${
-                          isLiked 
-                            ? 'bg-red-500 hover:bg-red-600 text-white' 
-                            : 'hover:border-red-300'
-                        }`}
-                      >
-                        {isSendingLike[p._id] ? (
-                          <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          <Heart className={`w-4 h-4 ${isLiked ? 'text-white' : 'text-red-600'}`} 
-                            fill={isLiked ? "white" : "none"} 
-                          />
-                        )}
-                      </Button>
-                    </div>
+                  {/* SHORTLIST */}
+                  <div className="flex flex-col items-center md:flex-row gap-2">
+                    <span className="text-sm">Like</span>
+                    <Button
+                      variant={isLiked ? "default" : "outline"}
+                      disabled={isSendingLike[p._id]}
+                      onClick={() => handleShortlist(p._id)}
+                      className={`w-10 h-10 rounded-full ${
+                        isLiked 
+                          ? 'bg-red-500 hover:bg-red-600 text-white' 
+                          : 'hover:border-red-300'
+                      }`}
+                    >
+                      {isSendingLike[p._id] ? (
+                        <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Heart className={`w-4 h-4 ${isLiked ? 'text-white' : 'text-red-600'}`} 
+                          fill={isLiked ? "white" : "none"} 
+                        />
+                      )}
+                    </Button>
+                  </div>
 
-                    {/* SKIP */}
-                    <div className="flex flex-col items-center md:flex-row gap-2">
-                      <span className="text-sm">Skip</span>
-                      <Button
-                        variant="outline"
-                        onClick={() => handleNotNow(p._id)}
-                        className="bg-gray-100 hover:bg-gray-200 border-gray-300 w-10 h-10 rounded-full"
-                      >
-                        <X className="w-4 h-4 text-gray-600" />
-                      </Button>
-                    </div>
+                  {/* SKIP */}
+                  <div className="flex flex-col items-center md:flex-row gap-2">
+                    <span className="text-sm">Skip</span>
+                    <Button
+                      variant="outline"
+                      onClick={() => handleNotNow(p._id)}
+                      className="bg-gray-100 hover:bg-gray-200 border-gray-300 w-10 h-10 rounded-full"
+                    >
+                      <X className="w-4 h-4 text-gray-600" />
+                    </Button>
                   </div>
                 </div>
-              );
-            })}
-
-            {/* PAGINATION */}
-            {totalPages > 1 && (
-              <div className="flex justify-center items-center gap-4 mt-6">
-                <button
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage((p) => p - 1)}
-                  className={`px-5 py-2 text-white rounded transition
-                    ${currentPage === 1 
-                      ? "bg-gray-300 cursor-not-allowed" 
-                      : "bg-[#219e25] hover:bg-[#1b7f1e]"}`}
-                >
-                  Previous
-                </button>
-
-                <span className="font-medium">
-                  Page {currentPage} of {totalPages}
-                </span>
-
-                <button
-                  disabled={currentPage === totalPages}
-                  onClick={() => setCurrentPage((p) => p + 1)}
-                  className={`px-5 py-2 text-white rounded transition
-                    ${currentPage === totalPages 
-                      ? "bg-gray-300 cursor-not-allowed" 
-                      : "bg-[#219e25] hover:bg-[#1b7f1e]"}`}
-                >
-                  Next
-                </button>
               </div>
-            )}
-          </>
-        )}
-      </div>
-    </>
+            );
+          })}
+
+          {/* PAGINATION */}
+          {totalPages > 1 && (
+            <div className="flex justify-center items-center gap-4 mt-6">
+              <button
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((p) => p - 1)}
+                className={`px-5 py-2 text-white rounded transition
+                  ${currentPage === 1 
+                    ? "bg-gray-300 cursor-not-allowed" 
+                    : "bg-[#219e25] hover:bg-[#1b7f1e]"}`}
+              >
+                Previous
+              </button>
+
+              <span className="font-medium">
+                Page {currentPage} of {totalPages}
+              </span>
+
+              <button
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage((p) => p + 1)}
+                className={`px-5 py-2 text-white rounded transition
+                  ${currentPage === totalPages 
+                    ? "bg-gray-300 cursor-not-allowed" 
+                    : "bg-[#219e25] hover:bg-[#1b7f1e]"}`}
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }

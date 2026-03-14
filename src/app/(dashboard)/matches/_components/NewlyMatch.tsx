@@ -31,30 +31,18 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // In‑memory sets – no persistence across refreshes
   const [isSendingConnection, setIsSendingConnection] = useState<Record<string, boolean>>({});
   const [isSendingLike, setIsSendingLike] = useState<Record<string, boolean>>({});
+  const [likedProfiles, setLikedProfiles] = useState<Set<string>>(new Set());
+  const [permanentlySkipped, setPermanentlySkipped] = useState<Set<string>>(new Set());
+  // connectedProfiles is not used here because we remove on connect anyway
 
   const router = useRouter();
 
   // PAGINATION
   const [currentPage, setCurrentPage] = useState(1);
   const profilesPerPage = 10;
-
-  // PERMANENTLY SKIPPED PROFILES (LocalStorage में save)
-  const [permanentlySkipped, setPermanentlySkipped] = useState<Set<string>>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('skippedProfiles');
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    }
-    return new Set();
-  });
-
-  // LocalStorage में save करें जब skipped profiles change हो
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('skippedProfiles', JSON.stringify(Array.from(permanentlySkipped)));
-    }
-  }, [permanentlySkipped]);
 
   // FETCH NEW USERS
   const fetchNewUsers = useCallback(async () => {
@@ -77,7 +65,7 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
 
       if (!response.ok) throw new Error(data.message);
       
-      // PERMANENTLY skipped profiles filter करें
+      // Filter out permanently skipped profiles (in‑memory only)
       const filteredUsers = (data.users || []).filter(
         (user: NewlyMatchedUser) => !permanentlySkipped.has(user._id)
       );
@@ -103,18 +91,9 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
     return new Date().getFullYear() - d.getFullYear();
   };
 
-  // REMOVE PROFILE PERMANENTLY
+  // REMOVE PROFILE (used for connect and skip)
   const removeProfile = (id: string) => {
-    // Local state से remove
     setNewlyMatched((prev) => prev.filter((u) => u._id !== id));
-    
-    // Permanently skip के लिए LocalStorage में save करें
-    setPermanentlySkipped((prev) => {
-      const newSet = new Set(prev);
-      newSet.add(id);
-      return newSet;
-    });
-    
     // Reset pagination if needed
     if (newlyMatched.length <= 1) {
       setCurrentPage(1);
@@ -144,11 +123,16 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
         throw new Error(errorData.message || "Failed to send connection");
       }
 
-      toast.success("Connection request sent");
+      toast.success("Connection request sent!");
       removeProfile(id);
       
     } catch (error: any) {
-      toast.error(error.message || "Failed to send connection");
+      if (error.message.includes("already sent")) {
+        // Already sent – just remove silently
+        removeProfile(id);
+      } else {
+        toast.error(error.message || "Failed to send connection");
+      }
       setIsSendingConnection((prev) => ({ ...prev, [id]: false }));
     }
   };
@@ -156,6 +140,10 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
   // ACTION: SHORTLIST
   const handleShortlist = async (id: string) => {
     try {
+      if (likedProfiles.has(id)) {
+        return; // Already liked – do nothing
+      }
+
       setIsSendingLike((prev) => ({ ...prev, [id]: true }));
 
       const token = localStorage.getItem("authToken");
@@ -176,11 +164,17 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
         throw new Error(errorData.message || "Failed to shortlist");
       }
 
-      toast.success("Shortlisted");
-      removeProfile(id);
+      setLikedProfiles(prev => new Set(prev).add(id));
+      toast.success("Profile liked!");
+      // Do NOT remove profile – only heart turns red
       
     } catch (error: any) {
-      toast.error(error.message || "Failed to shortlist");
+      if (error.message.includes("already liked")) {
+        setLikedProfiles(prev => new Set(prev).add(id));
+        // No toast
+      } else {
+        toast.error(error.message || "Failed to shortlist");
+      }
       setIsSendingLike((prev) => ({ ...prev, [id]: false }));
     }
   };
@@ -207,7 +201,8 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
         throw new Error(errorData.message || "Failed to skip profile");
       }
 
-      toast.success("Profile skipped permanently");
+      setPermanentlySkipped(prev => new Set(prev).add(id));
+      toast.success("Profile skipped!");
       removeProfile(id);
       
     } catch (error: any) {
@@ -228,14 +223,6 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
     }
   };
 
-  // CLEAR SKIPPED PROFILES (Optional - for testing)
-  const clearSkippedProfiles = () => {
-    setPermanentlySkipped(new Set());
-    localStorage.removeItem('skippedProfiles');
-    toast.success("Skipped profiles cleared");
-    fetchNewUsers();
-  };
-
   if (activeTab !== "New Profile") return null;
 
   // PAGINATION
@@ -246,22 +233,8 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
 
   return (
     <div className="space-y-6 mt-0">
-      {/* REFRESH BUTTON */}
-      <div className="flex justify-between items-center">
-        <div className="text-sm text-gray-500">
-          Skipped Profiles: {permanentlySkipped.size}
-          {permanentlySkipped.size > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={clearSkippedProfiles}
-              className="ml-2 text-xs"
-            >
-              Clear All
-            </Button>
-          )}
-        </div>
-        
+      {/* REFRESH BUTTON ONLY – no skipped counter */}
+      <div className="flex justify-end">
         <Button
           variant="outline"
           onClick={handleRefresh}
@@ -282,119 +255,118 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
       ) : currentProfiles.length === 0 ? (
         <div className="text-center text-gray-600 py-8">
           <p>No new profiles found.</p>
-          <div className="mt-4 space-x-2">
-            <Button
-              variant="outline"
-              onClick={handleRefresh}
-              className="mt-2"
-            >
-              Refresh
-            </Button>
-            {permanentlySkipped.size > 0 && (
-              <Button
-                variant="ghost"
-                onClick={clearSkippedProfiles}
-                className="mt-2"
-              >
-                Clear Skipped Profiles
-              </Button>
-            )}
-          </div>
+          <Button
+            variant="outline"
+            onClick={handleRefresh}
+            className="mt-4"
+          >
+            Refresh
+          </Button>
         </div>
       ) : (
         <>
-          {currentProfiles.map((user) => (
-            <div
-              key={user._id}
-              className="p-6 bg-white rounded-lg border border-[#7D0A0A] shadow-sm
-              flex flex-col md:flex-row md:items-center md:justify-between gap-6"
-            >
-              {/* IMAGE */}
-              <div className="flex justify-center md:block">
-                <Image
-                  src={user.profileImage || "/default-avatar.png"}
-                  alt={user.firstName}
-                  width={96}
-                  height={96}
-                  className="w-28 h-28 rounded-full object-cover cursor-pointer"
-                  onClick={() => router.push(`/matches/${user._id}`)}
-                />
-              </div>
-
-              {/* INFO */}
-              <div className="flex-1 text-center md:text-left md:px-6 space-y-1">
-                <h3 className="text-lg font-semibold">
-                  {user.firstName} {user.lastName}
-                </h3>
-
-                <p className="text-sm text-gray-500 border-b pb-1">
-                  {user._id} | Last seen recently
-                </p>
-
-                <p className="text-sm text-gray-700">
-                  {calculateAge(user.dateOfBirth)} Yrs · {user.height} · {user.caste}
-                </p>
-
-                <p className="text-sm text-gray-700">
-                  {user.designation} · Earns {user.annualIncome}
-                </p>
-
-                <p className="text-sm text-gray-700">{user.highestEducation}</p>
-                <p className="text-sm text-gray-700">
-                  {user.city}, {user.state}
-                </p>
-                <p className="text-sm text-gray-700">{user.motherTongue}</p>
-              </div>
-
-              {/* ACTION BUTTONS */}
-              <div className="grid grid-cols-3 md:grid-cols-1 gap-4 items-center text-center md:text-left md:border-l md:pl-4">
-                {/* Connection */}
-                <div className="flex flex-col items-center md:flex-row gap-2">
-                  <span className="text-sm">Connect</span>
-                  <Button
-                    disabled={isSendingConnection[user._id]}
-                    onClick={() => handleSendConnection(user._id)}
-                    className="bg-gradient-to-r from-green-400 to-blue-400 text-white w-10 h-10 rounded-full"
-                  >
-                    {isSendingConnection[user._id] ? (
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <Send className="w-4 h-4" />
-                    )}
-                  </Button>
+          {currentProfiles.map((user) => {
+            const isLiked = likedProfiles.has(user._id);
+            
+            return (
+              <div
+                key={user._id}
+                className="p-6 bg-white rounded-lg border border-[#7D0A0A] shadow-sm
+                flex flex-col md:flex-row md:items-center md:justify-between gap-6"
+              >
+                {/* IMAGE */}
+                <div className="flex justify-center md:block">
+                  <Image
+                    src={user.profileImage || "/default-avatar.png"}
+                    alt={user.firstName}
+                    width={96}
+                    height={96}
+                    className="w-28 h-28 rounded-full object-cover cursor-pointer"
+                    onClick={() => router.push(`/matches/${user._id}`)}
+                  />
                 </div>
 
-                {/* Shortlist */}
-                <div className="flex flex-col items-center md:flex-row gap-2">
-                  <span className="text-sm">Like</span>
-                  <Button
-                    variant="outline"
-                    disabled={isSendingLike[user._id]}
-                    onClick={() => handleShortlist(user._id)}
-                    className="w-10 h-10 rounded-full"
-                  >
-                    {isSendingLike[user._id] ? (
-                      <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <Heart className="w-4 h-4 text-red-600" />
-                    )}
-                  </Button>
+                {/* INFO */}
+                <div className="flex-1 text-center md:text-left md:px-6 space-y-1">
+                  <h3 className="text-lg font-semibold">
+                    {user.firstName} {user.lastName}
+                  </h3>
+
+                  <p className="text-sm text-gray-500 border-b pb-1">
+                    {user._id} | Last seen recently
+                  </p>
+
+                  <p className="text-sm text-gray-700">
+                    {calculateAge(user.dateOfBirth)} Yrs · {user.height} · {user.caste}
+                  </p>
+
+                  <p className="text-sm text-gray-700">
+                    {user.designation} · Earns {user.annualIncome}
+                  </p>
+
+                  <p className="text-sm text-gray-700">{user.highestEducation}</p>
+                  <p className="text-sm text-gray-700">
+                    {user.city}, {user.state}
+                  </p>
+                  <p className="text-sm text-gray-700">{user.motherTongue}</p>
                 </div>
 
-                {/* Not Now */}
-                <div className="flex flex-col items-center md:flex-row gap-2">
-                  <span className="text-sm">Skip</span>
-                  <Button
-                    variant="outline"
-                    onClick={() => handleNotNow(user._id)}
-                    className="bg-gray-200 w-10 h-10 rounded-full"
-                  >
-                    <X className="w-4 h-4 text-gray-600" />
-                  </Button>
+                {/* ACTION BUTTONS */}
+                <div className="grid grid-cols-3 md:grid-cols-1 gap-4 items-center text-center md:text-left md:border-l md:pl-4">
+                  {/* Connect */}
+                  <div className="flex flex-col items-center md:flex-row gap-2">
+                    <span className="text-sm">Connect</span>
+                    <Button
+                      disabled={isSendingConnection[user._id]}
+                      onClick={() => handleSendConnection(user._id)}
+                      className="bg-gradient-to-r from-green-400 to-blue-400 text-white w-10 h-10 rounded-full"
+                    >
+                      {isSendingConnection[user._id] ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* Like */}
+                  <div className="flex flex-col items-center md:flex-row gap-2">
+                    <span className="text-sm">Like</span>
+                    <Button
+                      variant={isLiked ? "default" : "outline"}
+                      disabled={isSendingLike[user._id]}
+                      onClick={() => handleShortlist(user._id)}
+                      className={`w-10 h-10 rounded-full ${
+                        isLiked 
+                          ? 'bg-red-500 hover:bg-red-600 text-white' 
+                          : 'hover:border-red-300'
+                      }`}
+                    >
+                      {isSendingLike[user._id] ? (
+                        <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Heart className={`w-4 h-4 ${isLiked ? 'text-white' : 'text-red-600'}`} 
+                          fill={isLiked ? "white" : "none"} 
+                        />
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* Skip */}
+                  <div className="flex flex-col items-center md:flex-row gap-2">
+                    <span className="text-sm">Skip</span>
+                    <Button
+                      variant="outline"
+                      onClick={() => handleNotNow(user._id)}
+                      className="bg-gray-200 w-10 h-10 rounded-full hover:bg-gray-300"
+                    >
+                      <X className="w-4 h-4 text-gray-600" />
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {/* PAGINATION */}
           {totalPages > 1 && (

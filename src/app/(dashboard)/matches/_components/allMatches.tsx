@@ -8,14 +8,6 @@ import { Send, Heart, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Loading from "../../../../Loading";
 
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-
 interface AllMatchesProps {
   activeTab: string;
 }
@@ -41,52 +33,16 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
   const [matches, setMatches] = useState<MatchProfile[]>([]);
   const [isLoadingMatches, setIsLoadingMatches] = useState(false);
 
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [dialogMessage, setDialogMessage] = useState("");
-  const [dialogTitle, setDialogTitle] = useState("");
-
-  // Track actions for each profile
+  // In‑memory sets – no persistence across refreshes
   const [isSendingConnection, setIsSendingConnection] = useState<Record<string, boolean>>({});
   const [isSendingLike, setIsSendingLike] = useState<Record<string, boolean>>({});
-  const [likedProfiles, setLikedProfiles] = useState<Set<string>>(() => {
-    // Load liked profiles from localStorage
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('likedProfiles');
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    }
-    return new Set();
-  });
-
-  // PERMANENTLY SKIPPED/BLOCKED PROFILES
-  const [permanentlySkipped, setPermanentlySkipped] = useState<Set<string>>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('skippedMatches');
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    }
-    return new Set();
-  });
-
-  // CONNECTED PROFILES (so we don't show them again)
-  const [connectedProfiles, setConnectedProfiles] = useState<Set<string>>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('connectedProfiles');
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    }
-    return new Set();
-  });
+  const [likedProfiles, setLikedProfiles] = useState<Set<string>>(new Set());
+  const [permanentlySkipped, setPermanentlySkipped] = useState<Set<string>>(new Set());
+  const [connectedProfiles, setConnectedProfiles] = useState<Set<string>>(new Set());
 
   const [currentPage, setCurrentPage] = useState(1);
   const profilesPerPage = 10;
   const router = useRouter();
-
-  // Save states to localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('likedProfiles', JSON.stringify(Array.from(likedProfiles)));
-      localStorage.setItem('skippedMatches', JSON.stringify(Array.from(permanentlySkipped)));
-      localStorage.setItem('connectedProfiles', JSON.stringify(Array.from(connectedProfiles)));
-    }
-  }, [likedProfiles, permanentlySkipped, connectedProfiles]);
 
   const calculateAge = (dob: string) => {
     if (!dob) return "—";
@@ -98,7 +54,7 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
   const fetchAllMatches = useCallback(async () => {
     try {
       const token = localStorage.getItem("authToken");
-      if (!token) throw new Error("No authentication token found.");
+      if (!token) return;
 
       setIsLoadingMatches(true);
 
@@ -113,12 +69,12 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
         }
       );
 
-      if (!response.ok) throw new Error("Failed to fetch matches");
+      if (!response.ok) return;
 
       const data = await response.json();
-      if (!data.success || !data.users) throw new Error("Invalid response format");
+      if (!data.success || !data.users) return;
 
-      // Filter out skipped and connected profiles
+      // Filter out skipped and connected profiles (in‑memory only)
       const filteredUsers = data.users.filter((user: any) => 
         !permanentlySkipped.has(user._id) && !connectedProfiles.has(user._id)
       );
@@ -144,7 +100,7 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
 
       setMatches(cleaned);
     } catch {
-      toast.error("Failed to load matches");
+      // Silently fail
     } finally {
       setIsLoadingMatches(false);
     }
@@ -165,11 +121,8 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
     try {
       const token = localStorage.getItem("authToken");
       
-      // Check if already connected
       if (connectedProfiles.has(id)) {
-        setDialogTitle("Already Connected");
-        setDialogMessage("You have already sent a connection request to this profile.");
-        setDialogOpen(true);
+        removeProfile(id);
         return;
       }
 
@@ -186,25 +139,18 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to send connection");
+        throw new Error(errorData.message || "Failed");
       }
 
-      // Add to connected profiles
       setConnectedProfiles(prev => new Set(prev).add(id));
-      
-      toast.success("Connection request sent successfully!");
+      toast.success("Connection request sent!");
       removeProfile(id);
       
     } catch (error: any) {
       if (error.message.includes("already sent")) {
-        setDialogTitle("Already Connected");
-        setDialogMessage("You have already sent a connection request to this profile.");
-        setDialogOpen(true);
-        // Add to connected profiles anyway
         setConnectedProfiles(prev => new Set(prev).add(id));
         removeProfile(id);
-      } else {
-        toast.error(error.message || "Failed to send connection");
+        // No toast for already sent
       }
     } finally {
       setIsSendingConnection((prev) => ({ ...prev, [id]: false }));
@@ -215,11 +161,7 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
     try {
       const token = localStorage.getItem("authToken");
 
-      // Check if already liked
       if (likedProfiles.has(id)) {
-        setDialogTitle("Already Shortlisted");
-        setDialogMessage("This profile is already in your shortlist.");
-        setDialogOpen(true);
         return;
       }
 
@@ -236,25 +178,16 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to shortlist");
+        throw new Error(errorData.message || "Failed");
       }
 
-      // Mark as liked
       setLikedProfiles(prev => new Set(prev).add(id));
-      
-      toast.success("Profile added to shortlist!");
-      
-      // Change heart to red immediately
-      // (Already handled by likedProfiles state)
+      toast.success("Profile liked!");
       
     } catch (error: any) {
       if (error.message.includes("already liked")) {
-        setDialogTitle("Already Shortlisted");
-        setDialogMessage("This profile is already in your shortlist.");
-        setDialogOpen(true);
         setLikedProfiles(prev => new Set(prev).add(id));
-      } else {
-        toast.error(error.message || "Failed to shortlist");
+        // No toast for already liked
       }
     } finally {
       setIsSendingLike((prev) => ({ ...prev, [id]: false }));
@@ -274,28 +207,15 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
         body: JSON.stringify({ userIdToBlock: id }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to skip profile");
-      }
+      if (!response.ok) return;
 
-      // Permanently skip
       setPermanentlySkipped(prev => new Set(prev).add(id));
-      
-      toast.success("Profile skipped permanently");
+      toast.success("Profile skipped!");
       removeProfile(id);
       
-    } catch (error: any) {
-      toast.error(error.message || "Failed to skip profile");
+    } catch {
+      // Silently fail
     }
-  };
-
-  // Clear all skipped profiles (optional)
-  const clearSkippedProfiles = () => {
-    setPermanentlySkipped(new Set());
-    localStorage.removeItem('skippedMatches');
-    toast.success("Skipped profiles cleared");
-    fetchAllMatches();
   };
 
   const totalPages = Math.ceil(matches.length / profilesPerPage);
@@ -305,47 +225,8 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
 
   return (
     <>
-      {/* DIALOG BOX FOR ALREADY CONNECTED/LIKED */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-lg">{dialogTitle}</DialogTitle>
-            <DialogDescription className="pt-2">
-              {dialogMessage}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end">
-            <Button onClick={() => setDialogOpen(false)} className="mt-4">
-              OK
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       {activeTab !== "Profile Match" ? null : (
         <div className="space-y-6 mt-0">
-          {/* HEADER WITH STATS */}
-          <div className="flex justify-between items-center mb-4">
-            <div className="text-sm text-gray-500">
-              {permanentlySkipped.size > 0 && (
-                <span>
-                  Skipped: {permanentlySkipped.size}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={clearSkippedProfiles}
-                    className="ml-2 text-xs"
-                  >
-                    Clear All
-                  </Button>
-                </span>
-              )}
-            </div>
-            
-            <div className="text-sm text-gray-600">
-            </div>
-          </div>
-
           {isLoadingMatches ? (
             <Loading message="Loading matches..." />
           ) : currentMatches.length > 0 ? (
@@ -358,7 +239,7 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
                   className="p-6 bg-white rounded-lg border border-[#7D0A0A] shadow-sm 
                   flex flex-col md:flex-row md:items-center md:justify-between gap-6"
                 >
-                  {/* IMAGE */}
+                  {/* Image */}
                   <div className="flex justify-center md:block">
                     <Image
                       src={profile.image}
@@ -370,7 +251,7 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
                     />
                   </div>
 
-                  {/* INFO */}
+                  {/* Info */}
                   <div className="flex-1 text-center md:text-left md:px-6 space-y-1">
                     <h3 className="text-lg font-semibold">{profile.name}</h3>
 
@@ -390,10 +271,11 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
                     <p className="text-sm text-gray-700">{profile.languages.join(", ")}</p>
                   </div>
 
+                  {/* Actions */}
                   <div className="grid grid-cols-3 md:grid-cols-1 gap-4 items-center text-center md:text-left 
                   md:border-l md:pl-4">
 
-                    {/* Connection Button */}
+                    {/* Connect */}
                     <div className="flex flex-col items-center md:flex-row gap-2">
                       <span className="text-sm">Connect</span>
                       <Button
@@ -409,12 +291,12 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
                       </Button>
                     </div>
 
-                    {/* Shortlist Button - RED when liked */}
+                    {/* Like */}
                     <div className="flex flex-col items-center md:flex-row gap-2">
                       <span className="text-sm">Like</span>
                       <Button
                         variant={isLiked ? "default" : "outline"}
-                        disabled={isSendingLike[profile.id] || isLiked}
+                        disabled={isSendingLike[profile.id]}
                         onClick={() => handleShortlist(profile.id)}
                         className={`w-10 h-10 rounded-full ${
                           isLiked 
@@ -432,7 +314,7 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
                       </Button>
                     </div>
 
-                    {/* Skip Button */}
+                    {/* Skip */}
                     <div className="flex flex-col items-center md:flex-row gap-2">
                       <span className="text-sm">Skip</span>
                       <Button
@@ -451,19 +333,10 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
           ) : (
             <div className="text-center text-gray-500 py-10">
               <p className="text-lg mb-2">No matches found.</p>
-              {permanentlySkipped.size > 0 && (
-                <Button
-                  variant="outline"
-                  onClick={clearSkippedProfiles}
-                  className="mt-2"
-                >
-                  Clear Skipped Profiles
-                </Button>
-              )}
             </div>
           )}
 
-          {/* PAGINATION */}
+          {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex flex-col sm:flex-row justify-center items-center gap-4 mt-8">
               <div className="flex items-center gap-4">
@@ -494,9 +367,6 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
                 >
                   Next
                 </button>
-              </div>
-
-              <div className="text-sm text-gray-500">
               </div>
             </div>
           )}
