@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
-import { Send, Heart, X } from "lucide-react";
+import { Send, Heart, X, Check } from "lucide-react";
 import Loading from "../../../../Loading";
 import { useRouter } from "next/navigation";
 
@@ -33,12 +33,12 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
   const [profiles, setProfiles] = useState<RecommendedProfile[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // In‑memory sets – no persistence across refreshes
+  // In‑memory UI state – no persistence across refreshes
   const [isSendingConnection, setIsSendingConnection] = useState<{ [key: string]: boolean }>({});
   const [isSendingLike, setIsSendingLike] = useState<{ [key: string]: boolean }>({});
   const [likedProfiles, setLikedProfiles] = useState<Set<string>>(new Set());
-  const [permanentlySkipped, setPermanentlySkipped] = useState<Set<string>>(new Set());
   const [connectedProfiles, setConnectedProfiles] = useState<Set<string>>(new Set());
+  const [permanentlySkipped, setPermanentlySkipped] = useState<Set<string>>(new Set());
 
   const [currentPage, setCurrentPage] = useState(1);
   const limit = 10;
@@ -64,9 +64,9 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
 
       if (!data.success || !data.users) throw new Error("Invalid response format");
 
-      // Filter out skipped and connected profiles (in‑memory only)
+      // Filter out permanently skipped profiles – liked/connected remain visible
       const filteredUsers = data.users.filter((p: any) => 
-        !permanentlySkipped.has(p._id) && !connectedProfiles.has(p._id)
+        !permanentlySkipped.has(p._id)
       );
 
       const cleaned = filteredUsers.map((p: any) => {
@@ -99,7 +99,7 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
     } finally {
       setLoading(false);
     }
-  }, [permanentlySkipped, connectedProfiles]);
+  }, [permanentlySkipped]); // connectedProfiles removed
 
   useEffect(() => {
     if (activeTab === "Preference") {
@@ -115,14 +115,13 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
     setProfiles((prev) => prev.filter((p) => p._id !== id));
   };
 
-  // SEND CONNECTION - ALWAYS SHOW SUCCESS MESSAGE
+  // SEND CONNECTION
   const handleSendConnection = async (id: string) => {
     try {
       const token = localStorage.getItem("authToken");
       
       if (connectedProfiles.has(id)) {
-        toast.success("Connection request sent!");
-        removeProfile(id);
+        // Already connected – do nothing
         return;
       }
 
@@ -144,14 +143,11 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
 
       setConnectedProfiles(prev => new Set(prev).add(id));
       toast.success("Connection request sent!");
-      removeProfile(id);
       
     } catch (error: any) {
-      // Even if it's "already sent", show success message
-      if (error.message.includes("Connection request sent!")) {
+      if (error.message.includes("already sent")) {
         setConnectedProfiles(prev => new Set(prev).add(id));
-        toast.success("Connection request sent!");
-        removeProfile(id);
+        // Optionally show a toast or keep silent
       } else {
         toast.error(error.message || "Failed to send connection");
       }
@@ -160,7 +156,7 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
     }
   };
 
-  // SHORTLIST - ALWAYS SHOW SUCCESS MESSAGE
+  // SHORTLIST
   const handleShortlist = async (id: string) => {
     try {
       const token = localStorage.getItem("authToken");
@@ -244,6 +240,7 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
         <>
           {currentData.map((p) => {
             const isLiked = likedProfiles.has(p._id);
+            const isConnected = connectedProfiles.has(p._id);
             
             return (
               <div
@@ -298,12 +295,16 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
                   <div className="flex flex-col items-center md:flex-row gap-2">
                     <span className="text-sm">Connect</span>
                     <Button
-                      disabled={isSendingConnection[p._id]}
+                      disabled={isSendingConnection[p._id] || isConnected}
                       onClick={() => handleSendConnection(p._id)}
-                      className="bg-gradient-to-r from-green-400 to-blue-400 text-white w-10 h-10 rounded-full hover:opacity-90"
+                      className={`w-10 h-10 rounded-full bg-gradient-to-r from-green-400 to-blue-400 text-white hover:opacity-90 ${
+                        isConnected ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
                     >
                       {isSendingConnection[p._id] ? (
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : isConnected ? (
+                        <Check className="w-4 h-4" />
                       ) : (
                         <Send className="w-4 h-4" />
                       )}

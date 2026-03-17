@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Send, Heart, X } from "lucide-react";
+import { Send, Heart, X, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Loading from "../../../../Loading";
 
@@ -33,7 +33,7 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
   const [matches, setMatches] = useState<MatchProfile[]>([]);
   const [isLoadingMatches, setIsLoadingMatches] = useState(false);
 
-  // In‑memory sets – no persistence across refreshes
+  // In‑memory UI state – no persistence across refreshes
   const [isSendingConnection, setIsSendingConnection] = useState<Record<string, boolean>>({});
   const [isSendingLike, setIsSendingLike] = useState<Record<string, boolean>>({});
   const [likedProfiles, setLikedProfiles] = useState<Set<string>>(new Set());
@@ -74,9 +74,9 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
       const data = await response.json();
       if (!data.success || !data.users) return;
 
-      // Filter out skipped and connected profiles (in‑memory only)
+      // Filter out only permanently skipped profiles – connected/liked profiles remain visible
       const filteredUsers = data.users.filter((user: any) => 
-        !permanentlySkipped.has(user._id) && !connectedProfiles.has(user._id)
+        !permanentlySkipped.has(user._id)
       );
 
       const cleaned = filteredUsers.map((user: any) => ({
@@ -104,7 +104,7 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
     } finally {
       setIsLoadingMatches(false);
     }
-  }, [permanentlySkipped, connectedProfiles]);
+  }, [permanentlySkipped]); // connectedProfiles removed from dependencies
 
   useEffect(() => {
     if (activeTab === "Profile Match") {
@@ -122,7 +122,7 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
       const token = localStorage.getItem("authToken");
       
       if (connectedProfiles.has(id)) {
-        removeProfile(id);
+        // Already connected, do nothing
         return;
       }
 
@@ -142,15 +142,17 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
         throw new Error(errorData.message || "Failed");
       }
 
+      // Mark as connected but keep profile visible
       setConnectedProfiles(prev => new Set(prev).add(id));
       toast.success("Connection request sent!");
-      removeProfile(id);
       
     } catch (error: any) {
       if (error.message.includes("already sent")) {
+        // Even if already sent, mark as connected for UI
         setConnectedProfiles(prev => new Set(prev).add(id));
-        removeProfile(id);
-        // No toast for already sent
+        // Optionally show a neutral message or nothing
+      } else {
+        toast.error(" send connection request.");
       }
     } finally {
       setIsSendingConnection((prev) => ({ ...prev, [id]: false }));
@@ -187,7 +189,9 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
     } catch (error: any) {
       if (error.message.includes("already liked")) {
         setLikedProfiles(prev => new Set(prev).add(id));
-        // No toast for already liked
+        // No toast for already liked, but you could show a subtle message
+      } else {
+        toast.error("Failed to like profile.");
       }
     } finally {
       setIsSendingLike((prev) => ({ ...prev, [id]: false }));
@@ -211,7 +215,7 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
 
       setPermanentlySkipped(prev => new Set(prev).add(id));
       toast.success("Profile skipped!");
-      removeProfile(id);
+      removeProfile(id); // Remove immediately on skip
       
     } catch {
       // Silently fail
@@ -232,6 +236,7 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
           ) : currentMatches.length > 0 ? (
             currentMatches.map((profile) => {
               const isLiked = likedProfiles.has(profile.id);
+              const isConnected = connectedProfiles.has(profile.id);
               
               return (
                 <div
@@ -279,12 +284,16 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
                     <div className="flex flex-col items-center md:flex-row gap-2">
                       <span className="text-sm">Connect</span>
                       <Button
-                        disabled={isSendingConnection[profile.id]}
+                        disabled={isSendingConnection[profile.id] || isConnected}
                         onClick={() => handleSendConnection(profile.id)}
-                        className="bg-gradient-to-r from-green-400 to-blue-400 text-white w-10 h-10 rounded-full hover:opacity-90"
+                        className={`w-10 h-10 rounded-full bg-gradient-to-r from-green-400 to-blue-400 text-white hover:opacity-90 ${
+                          isConnected ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
                       >
                         {isSendingConnection[profile.id] ? (
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : isConnected ? (
+                          <Check className="w-4 h-4" />
                         ) : (
                           <Send className="w-4 h-4" />
                         )}

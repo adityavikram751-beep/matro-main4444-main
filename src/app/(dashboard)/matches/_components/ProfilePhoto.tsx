@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { Send, Heart, X } from "lucide-react";
+import { Send, Heart, X, Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -41,12 +41,12 @@ export default function ProfilePhoto({ activeTab }: ProfilePhotoProps) {
   const [profilesWithPhoto, setProfilesWithPhoto] = useState<Profile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // In‑memory sets – no persistence across refreshes
+  // In‑memory UI state – no persistence across refreshes
   const [isSendingConnection, setIsSendingConnection] = useState<Record<string, boolean>>({});
   const [isSendingLike, setIsSendingLike] = useState<Record<string, boolean>>({});
   const [likedProfiles, setLikedProfiles] = useState<Set<string>>(new Set());
-  const [permanentlySkipped, setPermanentlySkipped] = useState<Set<string>>(new Set());
   const [connectedProfiles, setConnectedProfiles] = useState<Set<string>>(new Set());
+  const [permanentlySkipped, setPermanentlySkipped] = useState<Set<string>>(new Set());
 
   // PAGINATION
   const [currentPage, setCurrentPage] = useState(1);
@@ -83,9 +83,9 @@ export default function ProfilePhoto({ activeTab }: ProfilePhotoProps) {
 
       const data = await res.json();
 
-      // Filter out skipped and connected profiles (in‑memory only)
+      // Filter out only permanently skipped profiles – liked/connected remain visible
       const filteredProfiles = (data.photo || []).filter((u: Profile) => 
-        !permanentlySkipped.has(u._id) && !connectedProfiles.has(u._id)
+        !permanentlySkipped.has(u._id)
       );
 
       const cleaned = filteredProfiles.map((u: Profile) => ({
@@ -107,24 +107,23 @@ export default function ProfilePhoto({ activeTab }: ProfilePhotoProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [activeTab, permanentlySkipped, connectedProfiles]);
+  }, [activeTab, permanentlySkipped]); // connectedProfiles removed
 
   useEffect(() => {
     fetchProfiles();
   }, [fetchProfiles]);
 
-  // REMOVE PROFILE
+  // REMOVE PROFILE (only used for skip)
   const removeProfile = (id: string) =>
     setProfilesWithPhoto((prev) => prev.filter((p) => p._id !== id));
 
-  // SEND CONNECTION - ALWAYS SHOW SUCCESS MESSAGE
+  // SEND CONNECTION
   const handleSendConnection = async (id: string) => {
     try {
       const token = localStorage.getItem("authToken");
       
       if (connectedProfiles.has(id)) {
-        toast.success("Connection request sent!");
-        removeProfile(id);
+        // Already connected – do nothing
         return;
       }
 
@@ -146,14 +145,11 @@ export default function ProfilePhoto({ activeTab }: ProfilePhotoProps) {
 
       setConnectedProfiles(prev => new Set(prev).add(id));
       toast.success("Connection request sent!");
-      removeProfile(id);
       
     } catch (error: any) {
-      // Even if it's "already sent", show success message
       if (error.message.includes("already sent")) {
         setConnectedProfiles(prev => new Set(prev).add(id));
-        toast.success("Connection request sent!");
-        removeProfile(id);
+        // Optionally show a toast or keep silent
       } else {
         toast.error(error.message || "Failed to send connection");
       }
@@ -162,12 +158,13 @@ export default function ProfilePhoto({ activeTab }: ProfilePhotoProps) {
     }
   };
 
-  // SHORTLIST - ALWAYS SHOW SUCCESS MESSAGE
+  // SHORTLIST
   const handleShortlist = async (id: string) => {
     try {
       const token = localStorage.getItem("authToken");
 
       if (likedProfiles.has(id)) {
+        // Already liked – just show success (already done)
         toast.success("Profile liked!");
         return;
       }
@@ -254,6 +251,7 @@ export default function ProfilePhoto({ activeTab }: ProfilePhotoProps) {
         <>
           {currentProfiles.map((user) => {
             const isLiked = likedProfiles.has(user._id);
+            const isConnected = connectedProfiles.has(user._id);
             
             return (
               <div
@@ -309,12 +307,16 @@ export default function ProfilePhoto({ activeTab }: ProfilePhotoProps) {
                   <div className="flex flex-col items-center md:flex-row gap-2">
                     <span className="text-sm">Connect</span>
                     <Button
-                      disabled={isSendingConnection[user._id]}
+                      disabled={isSendingConnection[user._id] || isConnected}
                       onClick={() => handleSendConnection(user._id)}
-                      className="bg-gradient-to-r from-green-400 to-blue-400 text-white w-10 h-10 rounded-full hover:opacity-90"
+                      className={`w-10 h-10 rounded-full bg-gradient-to-r from-green-400 to-blue-400 text-white hover:opacity-90 ${
+                        isConnected ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
                     >
                       {isSendingConnection[user._id] ? (
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : isConnected ? (
+                        <Check className="w-4 h-4" />
                       ) : (
                         <Send className="w-4 h-4" />
                       )}

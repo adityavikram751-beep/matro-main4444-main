@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import Image from "next/image";
-import { Send, Heart, X } from "lucide-react";
+import { Send, Heart, X, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Loading from "../../../../Loading";
 
@@ -31,12 +31,12 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // In‑memory sets – no persistence across refreshes
+  // In‑memory UI state – no persistence across refreshes
   const [isSendingConnection, setIsSendingConnection] = useState<Record<string, boolean>>({});
   const [isSendingLike, setIsSendingLike] = useState<Record<string, boolean>>({});
   const [likedProfiles, setLikedProfiles] = useState<Set<string>>(new Set());
+  const [connectedProfiles, setConnectedProfiles] = useState<Set<string>>(new Set());
   const [permanentlySkipped, setPermanentlySkipped] = useState<Set<string>>(new Set());
-  // connectedProfiles is not used here because we remove on connect anyway
 
   const router = useRouter();
 
@@ -65,7 +65,7 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
 
       if (!response.ok) throw new Error(data.message);
       
-      // Filter out permanently skipped profiles (in‑memory only)
+      // Filter out permanently skipped profiles only
       const filteredUsers = (data.users || []).filter(
         (user: NewlyMatchedUser) => !permanentlySkipped.has(user._id)
       );
@@ -91,7 +91,7 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
     return new Date().getFullYear() - d.getFullYear();
   };
 
-  // REMOVE PROFILE (used for connect and skip)
+  // REMOVE PROFILE (used for skip only)
   const removeProfile = (id: string) => {
     setNewlyMatched((prev) => prev.filter((u) => u._id !== id));
     // Reset pagination if needed
@@ -103,6 +103,11 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
   // ACTION: SEND CONNECTION
   const handleSendConnection = async (id: string) => {
     try {
+      if (connectedProfiles.has(id)) {
+        // Already connected – do nothing
+        return;
+      }
+
       setIsSendingConnection((prev) => ({ ...prev, [id]: true }));
 
       const token = localStorage.getItem("authToken");
@@ -123,16 +128,17 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
         throw new Error(errorData.message || "Failed to send connection");
       }
 
+      // Mark as connected, keep profile visible
+      setConnectedProfiles(prev => new Set(prev).add(id));
       toast.success("Connection request sent!");
-      removeProfile(id);
       
     } catch (error: any) {
       if (error.message.includes("already sent")) {
-        // Already sent – just remove silently
-        removeProfile(id);
+        setConnectedProfiles(prev => new Set(prev).add(id));
       } else {
         toast.error(error.message || "Failed to send connection");
       }
+    } finally {
       setIsSendingConnection((prev) => ({ ...prev, [id]: false }));
     }
   };
@@ -175,6 +181,7 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
       } else {
         toast.error(error.message || "Failed to shortlist");
       }
+    } finally {
       setIsSendingLike((prev) => ({ ...prev, [id]: false }));
     }
   };
@@ -203,7 +210,7 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
 
       setPermanentlySkipped(prev => new Set(prev).add(id));
       toast.success("Profile skipped!");
-      removeProfile(id);
+      removeProfile(id); // Remove immediately on skip
       
     } catch (error: any) {
       toast.error(error.message || "Failed to skip profile");
@@ -233,7 +240,7 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
 
   return (
     <div className="space-y-6 mt-0">
-      {/* REFRESH BUTTON ONLY – no skipped counter */}
+      {/* REFRESH BUTTON */}
       <div className="flex justify-end">
         <Button
           variant="outline"
@@ -267,6 +274,7 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
         <>
           {currentProfiles.map((user) => {
             const isLiked = likedProfiles.has(user._id);
+            const isConnected = connectedProfiles.has(user._id);
             
             return (
               <div
@@ -317,12 +325,16 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
                   <div className="flex flex-col items-center md:flex-row gap-2">
                     <span className="text-sm">Connect</span>
                     <Button
-                      disabled={isSendingConnection[user._id]}
+                      disabled={isSendingConnection[user._id] || isConnected}
                       onClick={() => handleSendConnection(user._id)}
-                      className="bg-gradient-to-r from-green-400 to-blue-400 text-white w-10 h-10 rounded-full"
+                      className={`w-10 h-10 rounded-full bg-gradient-to-r from-green-400 to-blue-400 text-white hover:opacity-90 ${
+                        isConnected ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
                     >
                       {isSendingConnection[user._id] ? (
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : isConnected ? (
+                        <Check className="w-4 h-4" />
                       ) : (
                         <Send className="w-4 h-4" />
                       )}

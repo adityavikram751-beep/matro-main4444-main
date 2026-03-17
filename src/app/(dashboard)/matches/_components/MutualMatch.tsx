@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Send, Heart, X } from "lucide-react";
+import { Send, Heart, X, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface MutualMatchesProps {
@@ -32,7 +32,7 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
   const [matches, setMatches] = useState<MatchProfile[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // In‑memory sets – no persistence across refreshes
+  // In‑memory UI state – no persistence across refreshes
   const [isSendingConnection, setIsSendingConnection] = useState<Record<string, boolean>>({});
   const [isSendingLike, setIsSendingLike] = useState<Record<string, boolean>>({});
   const [likedProfiles, setLikedProfiles] = useState<Set<string>>(new Set());
@@ -72,9 +72,9 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
 
       const data = await res.json();
 
-      // Filter out skipped and connected profiles (in‑memory only)
+      // Filter out only permanently skipped profiles – connected/liked remain visible
       const filteredMatches = data.mutualMatches.filter((u: any) => 
-        !permanentlySkipped.has(u._id) && !connectedProfiles.has(u._id)
+        !permanentlySkipped.has(u._id)
       );
 
       const formatted = filteredMatches.map((u: any) => ({
@@ -101,7 +101,7 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [permanentlySkipped, connectedProfiles]);
+  }, [permanentlySkipped]); // connectedProfiles removed
 
   useEffect(() => {
     if (activeTab === "Mutual Match") {
@@ -119,7 +119,7 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
       const token = localStorage.getItem("authToken");
       
       if (connectedProfiles.has(id)) {
-        removeProfile(id);
+        // Already connected, do nothing
         return;
       }
 
@@ -139,15 +139,15 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
         throw new Error(errorData.message || "Failed");
       }
 
+      // Mark as connected but keep profile visible
       setConnectedProfiles(prev => new Set(prev).add(id));
       toast.success("Connection request sent!");
-      removeProfile(id);
       
     } catch (error: any) {
       if (error.message.includes("already sent")) {
         setConnectedProfiles(prev => new Set(prev).add(id));
-        removeProfile(id);
-        // No toast for already sent
+      } else {
+        toast.error("Failed to send connection request.");
       }
     } finally {
       setIsSendingConnection((prev) => ({ ...prev, [id]: false }));
@@ -180,12 +180,12 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
 
       setLikedProfiles(prev => new Set(prev).add(id));
       toast.success("Profile liked!");
-      // Do NOT remove profile – only heart turns red
       
     } catch (error: any) {
       if (error.message.includes("already liked")) {
         setLikedProfiles(prev => new Set(prev).add(id));
-        // No toast for already liked
+      } else {
+        toast.error("Failed to like profile.");
       }
     } finally {
       setIsSendingLike((prev) => ({ ...prev, [id]: false }));
@@ -209,7 +209,7 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
 
       setPermanentlySkipped(prev => new Set(prev).add(id));
       toast.success("Profile skipped!");
-      removeProfile(id);
+      removeProfile(id); // Remove immediately on skip
       
     } catch {
       // Silently fail
@@ -232,6 +232,7 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
       ) : currentProfiles.length > 0 ? (
         currentProfiles.map((profile) => {
           const isLiked = likedProfiles.has(profile.id);
+          const isConnected = connectedProfiles.has(profile.id);
           
           return (
             <div
@@ -280,12 +281,16 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
                 <div className="flex flex-col items-center md:flex-row gap-2">
                   <span className="text-sm">Connect</span>
                   <Button
-                    disabled={isSendingConnection[profile.id]}
+                    disabled={isSendingConnection[profile.id] || isConnected}
                     onClick={() => handleSendConnection(profile.id)}
-                    className="bg-gradient-to-r from-green-400 to-blue-400 text-white w-10 h-10 rounded-full hover:opacity-90"
+                    className={`w-10 h-10 rounded-full bg-gradient-to-r from-green-400 to-blue-400 text-white hover:opacity-90 ${
+                      isConnected ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
                   >
                     {isSendingConnection[profile.id] ? (
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : isConnected ? (
+                      <Check className="w-4 h-4" />
                     ) : (
                       <Send className="w-4 h-4" />
                     )}
