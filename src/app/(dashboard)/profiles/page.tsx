@@ -15,8 +15,8 @@ import { useUser } from '../../../components/ui/UserContext';
 
 const DEFAULT_PROFILE_IMAGE = "https://res.cloudinary.com/dppe3ni5z/image/upload/v1757144487/default-profile.png";
 
-const API_URL = 'https://matrimonial-backend-7ahc.onrender.com/api/profile/self';
-const UPDATE_API_URL = 'https://matrimonial-backend-7ahc.onrender.com/api/profile/update-profile';
+const API_URL = 'https://merimonial-backend.onrender.com/api/profile/self';
+const UPDATE_API_URL = 'https://merimonial-backend.onrender.com/api/profile/update-profile';
 
 const ProfilePage: React.FC = () => {
   const [profile, setProfile] = useState<any>(null);
@@ -31,7 +31,7 @@ const ProfilePage: React.FC = () => {
 
   const [displayImage, setDisplayImage] = useState<string | null>(null);
 
-  // ⭐ NEW — Wishlist + Not Now counts
+  // Counts for Wishlist and Not Now
   const [wishlistCount, setWishlistCount] = useState(0);
   const [notNowCount, setNotNowCount] = useState(0);
 
@@ -76,7 +76,7 @@ const ProfilePage: React.FC = () => {
     }
   }, []);
 
-  // ⭐ Fetch profile details
+  // Fetch profile details
   useEffect(() => {
     const fetchProfile = async () => {
       setLoading(true);
@@ -101,9 +101,9 @@ const ProfilePage: React.FC = () => {
         if (fullProfile.profileImage) {
           if (typeof fullProfile.profileImage === "object") {
             if (fullProfile.profileImage.filename) {
-              fullProfile.profileImage = `https://matrimonial-backend-7ahc.onrender.com/uploads/${fullProfile.profileImage.filename}`;
+              fullProfile.profileImage = `https://merimonial-backend.onrender.com/uploads/${fullProfile.profileImage.filename}`;
             } else if (fullProfile.profileImage.url) {
-              fullProfile.profileImage = `https://matrimonial-backend-7ahc.onrender.com${fullProfile.profileImage.url}`;
+              fullProfile.profileImage = `https://merimonial-backend.onrender.com${fullProfile.profileImage.url}`;
             }
           }
         }
@@ -125,29 +125,22 @@ const ProfilePage: React.FC = () => {
     fetchProfile();
   }, [setProfileImage]);
 
-  // ⭐ NEW — Fetch Wishlist + Not Now counts
+  // Fetch Wishlist & Not Now counts from the unified /api/like/count endpoint
   useEffect(() => {
     const fetchCounts = async () => {
       const token = localStorage.getItem("authToken");
       if (!token) return;
 
       try {
-        // Wishlist
-        const res1 = await fetch(
-          "https://matrimonial-backend-7ahc.onrender.com/api/like/ShortlistCount",
+        const response = await fetch(
+          "https://merimonial-backend.onrender.com/api/like/count",
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        const data1 = await res1.json();
-        if (data1.success) setWishlistCount(data1.count);
-
-        // Not Now
-        const res2 = await fetch(
-          "https://matrimonial-backend-7ahc.onrender.com/api/cross/BlockedCount",
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        const data2 = await res2.json();
-        if (data2.success) setNotNowCount(data2.count);
-
+        const result = await response.json();
+        if (result.success) {
+          setWishlistCount(result.data.liked);
+          setNotNowCount(result.data.unlike);
+        }
       } catch (err) {
         console.error("Count fetch error:", err);
       }
@@ -156,7 +149,7 @@ const ProfilePage: React.FC = () => {
     fetchCounts();
   }, []);
 
-  // ⭐ NEW — Stat mapping
+  // Map stats for StatsSection using live counts
   const mapStats = () => [
     { number: wishlistCount.toString(), label: 'Wishlist', color: 'bg-yellow-50 text-yellow-600' },
     { number: notNowCount.toString(), label: 'Not-Now', color: 'bg-pink-50 text-pink-600' },
@@ -189,7 +182,7 @@ const ProfilePage: React.FC = () => {
       const formData = new FormData();
       formData.append("profileImage", file);
 
-      const response = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/basic-details", {
+      const response = await fetch("https://merimonial-backend.onrender.com/api/profile/update-profile-image", {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -208,9 +201,9 @@ const ProfilePage: React.FC = () => {
 
       if (typeof uploadedUrl === "object") {
         if (uploadedUrl.filename) {
-          uploadedUrl = `https://matrimonial-backend-7ahc.onrender.com/uploads/${uploadedUrl.filename}`;
+          uploadedUrl = `https://merimonial-backend.onrender.com/uploads/${uploadedUrl.filename}`;
         } else if (uploadedUrl.url) {
-          uploadedUrl = `https://matrimonial-backend-7ahc.onrender.com${uploadedUrl.url}`;
+          uploadedUrl = `https://merimonial-backend.onrender.com${uploadedUrl.url}`;
         }
       }
 
@@ -381,7 +374,7 @@ const ProfilePage: React.FC = () => {
 
           {/* RIGHT COLUMNS */}
           <div className="lg:col-span-2 space-y-6">
-            {/* ⭐ Stats now shows LIVE API values */}
+            {/* Stats now use the unified count API */}
             <StatsSection stats={mapStats()} />
 
             <BasicInfoSection basicInfo={mapBasicInfo(profile)} />

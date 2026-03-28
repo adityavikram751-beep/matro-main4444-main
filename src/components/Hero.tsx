@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import ProfilePreferenceForm from './Preference';
 
 interface PreferenceData {
@@ -24,6 +24,8 @@ interface PreferenceData {
   city: string;
 }
 
+const BANNER_API = 'https://merimonial-backend.onrender.com/api/banner/access/banner-image';
+
 const Hero: React.FC = () => {
   const [lookingFor, setLookingFor] = useState('Women');
   const [ageFrom, setAgeFrom] = useState(22);
@@ -32,18 +34,36 @@ const Hero: React.FC = () => {
   const [motherTongue, setMotherTongue] = useState('English');
   const [showPreferenceForm, setShowPreferenceForm] = useState(false);
 
-  const handleDetailedPreferences = () => {
-    setShowPreferenceForm(true);
-  };
+  // ── Banner image state ──────────────────────────────────────────────────
+  const [bannerImage, setBannerImage] = useState<string>('/assets/heroimage.png');
+  const [bannerLoading, setBannerLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchBanner = async () => {
+      try {
+        const res = await fetch(BANNER_API);
+        const json = await res.json();
+        if (json.success && json.data?.length > 0) {
+          setBannerImage(json.data[0].image);
+        }
+      } catch (err) {
+        console.error('Banner fetch failed:', err);
+        // fallback stays as default
+      } finally {
+        setBannerLoading(false);
+      }
+    };
+    fetchBanner();
+  }, []);
+
+  const handleDetailedPreferences = () => setShowPreferenceForm(true);
 
   const handlePreferenceSubmit = async (preferenceData: PreferenceData) => {
     try {
       const token = localStorage.getItem('authToken');
-      if (!token) {
-        throw new Error('Authentication token not found. Please log in again.');
-      }
+      if (!token) throw new Error('Authentication token not found. Please log in again.');
 
-      const response = await fetch('https://matrimonial-backend-7ahc.onrender.com/api/partner/preference', {
+      const response = await fetch('https://merimonial-backend.onrender.com/api/partner/preference', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -66,9 +86,26 @@ const Hero: React.FC = () => {
     }
   };
 
-  const handlePreferenceCancel = () => {
-    setShowPreferenceForm(false);
-  };
+  const handlePreferenceCancel = () => setShowPreferenceForm(false);
+
+  // ── Shared banner image JSX ─────────────────────────────────────────────
+  const BannerImage = ({ className }: { className?: string }) => (
+    <div className={`relative w-full h-full ${className ?? ''}`}>
+      {bannerLoading ? (
+        // Skeleton loader while fetching
+        <div className="w-full h-full bg-gray-200 animate-pulse" />
+      ) : (
+        <Image
+          src={bannerImage}
+          alt="hero banner"
+          fill
+          className="object-cover"
+          priority
+          unoptimized // needed for external Cloudinary URLs
+        />
+      )}
+    </div>
+  );
 
   return (
     <>
@@ -82,7 +119,6 @@ const Hero: React.FC = () => {
               A Pure Path to Marriage — <br className="hidden lg:flex" />
               With Love and Trust at Heart
             </h1>
-
             <p className="text-base lg:text-xl font-light text-[#757575] mt-6 font-Lato text-center lg:text-left">
               This is more than just a matrimonial app. It's a heartfelt journey toward companionship,
               built on honesty, care, and community — without pressure or payment.
@@ -90,22 +126,20 @@ const Hero: React.FC = () => {
           </div>
         </div>
 
-        {/* RIGHT IMAGE SIDE */}
-        <div className="relative w-full h-[300px] lg:h-auto">
-          <Image
-            src="/assets/heroimage.png"
-            alt="hero"
-            fill
-            className="object-cover"
-            priority
-          />
+        {/* RIGHT IMAGE SIDE — Desktop (hidden on mobile) */}
+        <div className="hidden lg:block relative w-full h-auto">
+          <BannerImage />
+        </div>
+
+        {/* RIGHT IMAGE SIDE — Mobile (shown on mobile only) */}
+        <div className="block lg:hidden relative w-full h-[300px]">
+          <BannerImage />
         </div>
 
         {/* MOBILE FORM */}
         <div className="block lg:hidden w-full px-6 mt-6">
           <div className="flex flex-col gap-4 bg-white p-5 shadow-xl border border-gray-200 rounded-md">
 
-            {/* Looking For */}
             <div className="flex flex-col">
               <label className="text-sm mb-1 font-medium text-[#757575]">I'm looking for a</label>
               <select
@@ -118,7 +152,6 @@ const Hero: React.FC = () => {
               </select>
             </div>
 
-            {/* AGE RANGE */}
             <div className="flex gap-3 items-end">
               <div className="flex flex-col">
                 <label className="text-sm font-medium text-[#757575]">Age</label>
@@ -129,9 +162,7 @@ const Hero: React.FC = () => {
                   className="border border-[#6F0000] p-2 rounded w-20 font-Mulish"
                 />
               </div>
-
               <span className="pb-2 font-medium">to</span>
-
               <div className="flex flex-col">
                 <label className="invisible">Age</label>
                 <input
@@ -143,7 +174,6 @@ const Hero: React.FC = () => {
               </div>
             </div>
 
-            {/* RELIGION */}
             <div className="flex flex-col">
               <label className="text-sm mb-1 font-medium text-[#757575]">Of Religion</label>
               <select
@@ -157,7 +187,6 @@ const Hero: React.FC = () => {
               </select>
             </div>
 
-            {/* MOTHER TONGUE */}
             <div className="flex flex-col">
               <label className="text-sm mb-1 font-medium text-[#757575]">And Mother Tongue</label>
               <select
@@ -170,7 +199,6 @@ const Hero: React.FC = () => {
               </select>
             </div>
 
-            {/* BUTTON */}
             <button
               type="button"
               onClick={handleDetailedPreferences}
@@ -178,17 +206,14 @@ const Hero: React.FC = () => {
             >
               Set Detailed Preferences
             </button>
-
           </div>
         </div>
 
         {/* DESKTOP FORM */}
         <div className="hidden lg:flex absolute left-1/2 -translate-x-1/2 top-[460px] z-20 w-full max-w-5xl px-4">
           <div className="flex flex-col bg-white px-8 py-6 shadow-2xl border border-gray-200 w-full rounded-md">
-
             <div className="flex items-center justify-between gap-6 w-full flex-wrap">
 
-              {/* Looking For */}
               <div className="flex flex-col">
                 <label className="text-sm mb-1 font-medium">I'm looking for a</label>
                 <select
@@ -201,7 +226,6 @@ const Hero: React.FC = () => {
                 </select>
               </div>
 
-              {/* AGE */}
               <div className="flex items-end gap-2">
                 <div className="flex flex-col">
                   <label className="text-sm mb-1 font-medium">Age</label>
@@ -224,7 +248,6 @@ const Hero: React.FC = () => {
                 </div>
               </div>
 
-              {/* Religion */}
               <div className="flex flex-col">
                 <label className="text-sm mb-1 font-medium">Of Religion</label>
                 <select
@@ -238,7 +261,6 @@ const Hero: React.FC = () => {
                 </select>
               </div>
 
-              {/* Mother Tongue */}
               <div className="flex flex-col">
                 <label className="text-sm mb-1 font-medium">Mother Tongue</label>
                 <select
@@ -251,14 +273,12 @@ const Hero: React.FC = () => {
                 </select>
               </div>
 
-              {/* BUTTON */}
               <button
                 onClick={handleDetailedPreferences}
                 className="bg-[#7D0A0A] text-white border-2 border-[#7B0A0A] px-10 py-3 rounded shadow-md hover:bg-[#6A0808] transition"
               >
                 Set Preferences
               </button>
-
             </div>
           </div>
         </div>
@@ -287,7 +307,7 @@ const Hero: React.FC = () => {
             highestEducation: '',
             income: '',
             state: '',
-            city: ''
+            city: '',
           }}
         />
       )}

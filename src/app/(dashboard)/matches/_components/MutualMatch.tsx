@@ -32,7 +32,9 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
   const [matches, setMatches] = useState<MatchProfile[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // In‑memory UI state – no persistence across refreshes
+  // ✅ currentUserId — JWT se decode hoga automatically
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
   const [isSendingConnection, setIsSendingConnection] = useState<Record<string, boolean>>({});
   const [isSendingLike, setIsSendingLike] = useState<Record<string, boolean>>({});
   const [likedProfiles, setLikedProfiles] = useState<Set<string>>(new Set());
@@ -43,6 +45,27 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
   const profilesPerPage = 10;
   const router = useRouter();
 
+  // ✅ STEP 1: Mount hote hi userId nikalo — localStorage ya JWT se
+  useEffect(() => {
+    // Pehle direct localStorage se try karo
+    const storedId = localStorage.getItem("userId");
+    if (storedId) {
+      setCurrentUserId(storedId);
+      return;
+    }
+    // Nahi mila toh JWT token decode karo
+    try {
+      const token = localStorage.getItem("authToken");
+      if (token) {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        const id = payload.id || payload._id || payload.userId || payload.sub;
+        if (id) setCurrentUserId(String(id));
+      }
+    } catch {
+      // Token decode nahi hua — silently ignore
+    }
+  }, []);
+
   const calculateAge = (dob: string) => {
     if (!dob) return "—";
     const d = new Date(dob);
@@ -50,6 +73,7 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
     return new Date().getFullYear() - d.getFullYear();
   };
 
+  // ✅ STEP 2: GET /api/match/user-mutual-profiles?userId=<currentUserId>
   const fetchMutualMatches = useCallback(async () => {
     try {
       const token = localStorage.getItem("authToken");
@@ -57,8 +81,12 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
 
       setIsLoading(true);
 
+      // userId query param mein daal do
+      const params = new URLSearchParams();
+      if (currentUserId) params.append("userId", currentUserId);
+
       const res = await fetch(
-        "https://matrimonial-backend-7ahc.onrender.com/api/mutual-matches",
+        `https://merimonial-backend.onrender.com/api/match/user-mutual-profiles?${params.toString()}`,
         {
           method: "GET",
           headers: {
@@ -72,9 +100,8 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
 
       const data = await res.json();
 
-      // Filter out only permanently skipped profiles – connected/liked remain visible
-      const filteredMatches = data.mutualMatches.filter((u: any) => 
-        !permanentlySkipped.has(u._id)
+      const filteredMatches = data.mutualMatches.filter(
+        (u: any) => !permanentlySkipped.has(u._id)
       );
 
       const formatted = filteredMatches.map((u: any) => ({
@@ -101,7 +128,7 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [permanentlySkipped]); // connectedProfiles removed
+  }, [permanentlySkipped, currentUserId]);
 
   useEffect(() => {
     if (activeTab === "Mutual Match") {
@@ -114,38 +141,39 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
     setMatches((prev) => prev.filter((p) => p.id !== id));
   };
 
+  // ✅ STEP 3: Send Connection — body mein receiverId + userId
   const handleSendConnection = async (id: string) => {
     try {
       const token = localStorage.getItem("authToken");
-      
-      if (connectedProfiles.has(id)) {
-        // Already connected, do nothing
-        return;
-      }
+      if (connectedProfiles.has(id)) return;
 
       setIsSendingConnection((prev) => ({ ...prev, [id]: true }));
 
-      const response = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/request/send", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ receiverId: id }),
-      });
+      const response = await fetch(
+        "https://merimonial-backend.onrender.com/api/request/send",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            receiverId: id,
+            ...(currentUserId && { userId: currentUserId }), // ✅ userId body mein
+          }),
+        }
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || "Failed");
       }
 
-      // Mark as connected but keep profile visible
-      setConnectedProfiles(prev => new Set(prev).add(id));
+      setConnectedProfiles((prev) => new Set(prev).add(id));
       toast.success("Connection request sent!");
-      
     } catch (error: any) {
-      if (error.message.includes("already sent")) {
-        setConnectedProfiles(prev => new Set(prev).add(id));
+      if (error.message?.includes("already sent")) {
+        setConnectedProfiles((prev) => new Set(prev).add(id));
       } else {
         toast.error("Failed to send connection request.");
       }
@@ -154,36 +182,39 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
     }
   };
 
+  // ✅ STEP 4: Like — body mein receiverId + userId
   const handleShortlist = async (id: string) => {
     try {
       const token = localStorage.getItem("authToken");
-
-      if (likedProfiles.has(id)) {
-        return;
-      }
+      if (likedProfiles.has(id)) return;
 
       setIsSendingLike((prev) => ({ ...prev, [id]: true }));
 
-      const response = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/like/send", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ receiverId: id }),
-      });
+      const response = await fetch(
+        "https://merimonial-backend.onrender.com/api/like/send",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            receiverId: id,
+            ...(currentUserId && { userId: currentUserId }), // ✅ userId body mein
+          }),
+        }
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || "Failed");
       }
 
-      setLikedProfiles(prev => new Set(prev).add(id));
+      setLikedProfiles((prev) => new Set(prev).add(id));
       toast.success("Profile liked!");
-      
     } catch (error: any) {
-      if (error.message.includes("already liked")) {
-        setLikedProfiles(prev => new Set(prev).add(id));
+      if (error.message?.includes("already liked")) {
+        setLikedProfiles((prev) => new Set(prev).add(id));
       } else {
         toast.error("Failed to like profile.");
       }
@@ -192,25 +223,34 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
     }
   };
 
+  // ✅ STEP 5: Skip — now uses /api/like/unlike with receiverId
   const handleNotNow = async (id: string) => {
     try {
       const token = localStorage.getItem("authToken");
 
-      const response = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/cross/user", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ userIdToBlock: id }),
-      });
+      const response = await fetch(
+        "https://merimonial-backend.onrender.com/api/like/unlike",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            receiverId: id,
+            ...(currentUserId && { userId: currentUserId }), // optional userId
+          }),
+        }
+      );
 
       if (!response.ok) return;
 
-      setPermanentlySkipped(prev => new Set(prev).add(id));
-      toast.success("Profile skipped!");
-      removeProfile(id); // Remove immediately on skip
-      
+      const result = await response.json();
+      if (result.success) {
+        setPermanentlySkipped((prev) => new Set(prev).add(id));
+        toast.success("Profile skipped!");
+        removeProfile(id);
+      }
     } catch {
       // Silently fail
     }
@@ -233,7 +273,7 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
         currentProfiles.map((profile) => {
           const isLiked = likedProfiles.has(profile.id);
           const isConnected = connectedProfiles.has(profile.id);
-          
+
           return (
             <div
               key={profile.id}
@@ -258,25 +298,19 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
                 <p className="text-sm text-gray-500 border-b mt-1 pb-1">
                   {profile.profileId} | Last seen {profile.lastSeen}
                 </p>
-
                 <p className="text-sm text-gray-700 mt-1">
                   {profile.age} Yrs · {profile.height} · {profile.caste}
                 </p>
-
                 <p className="text-sm text-gray-700">
                   {profile.profession} · Earns {profile.salary}
                 </p>
-
                 <p className="text-sm text-gray-700">{profile.education}</p>
                 <p className="text-sm text-gray-700">{profile.location}</p>
                 <p className="text-sm text-gray-700">{profile.languages.join(", ")}</p>
               </div>
 
               {/* ACTION BUTTONS */}
-              <div className="
-                grid grid-cols-3 md:grid-cols-1 gap-4 
-                items-center text-center md:text-left md:border-l md:pl-4
-              ">
+              <div className="grid grid-cols-3 md:grid-cols-1 gap-4 items-center text-center md:text-left md:border-l md:pl-4">
                 {/* Connect */}
                 <div className="flex flex-col items-center md:flex-row gap-2">
                   <span className="text-sm">Connect</span>
@@ -284,7 +318,7 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
                     disabled={isSendingConnection[profile.id] || isConnected}
                     onClick={() => handleSendConnection(profile.id)}
                     className={`w-10 h-10 rounded-full bg-gradient-to-r from-green-400 to-blue-400 text-white hover:opacity-90 ${
-                      isConnected ? 'opacity-50 cursor-not-allowed' : ''
+                      isConnected ? "opacity-50 cursor-not-allowed" : ""
                     }`}
                   >
                     {isSendingConnection[profile.id] ? (
@@ -305,16 +339,17 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
                     disabled={isSendingLike[profile.id]}
                     onClick={() => handleShortlist(profile.id)}
                     className={`w-10 h-10 rounded-full ${
-                      isLiked 
-                        ? 'bg-red-500 hover:bg-red-600 text-white' 
-                        : 'hover:border-red-300'
+                      isLiked
+                        ? "bg-red-500 hover:bg-red-600 text-white"
+                        : "hover:border-red-300"
                     }`}
                   >
                     {isSendingLike[profile.id] ? (
                       <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
                     ) : (
-                      <Heart className={`w-4 h-4 ${isLiked ? 'text-white' : 'text-red-600'}`} 
-                        fill={isLiked ? "white" : "none"} 
+                      <Heart
+                        className={`w-4 h-4 ${isLiked ? "text-white" : "text-red-600"}`}
+                        fill={isLiked ? "white" : "none"}
                       />
                     )}
                   </Button>
@@ -348,7 +383,9 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
             disabled={currentPage === 1}
             onClick={() => setCurrentPage((p) => p - 1)}
             className={`px-5 py-2 text-white rounded ${
-              currentPage === 1 ? "bg-gray-300 cursor-not-allowed" : "bg-[#219e25] hover:bg-[#1b7f1e]"
+              currentPage === 1
+                ? "bg-gray-300 cursor-not-allowed"
+                : "bg-[#219e25] hover:bg-[#1b7f1e]"
             }`}
           >
             Previous
@@ -360,7 +397,9 @@ export default function MutualMatches({ activeTab }: MutualMatchesProps) {
             disabled={currentPage === totalPages}
             onClick={() => setCurrentPage((p) => p + 1)}
             className={`px-5 py-2 text-white rounded ${
-              currentPage === totalPages ? "bg-gray-300 cursor-not-allowed" : "bg-[#219e25] hover:bg-[#1b7f1e]"
+              currentPage === totalPages
+                ? "bg-gray-300 cursor-not-allowed"
+                : "bg-[#219e25] hover:bg-[#1b7f1e]"
             }`}
           >
             Next

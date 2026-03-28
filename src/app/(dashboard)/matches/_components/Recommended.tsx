@@ -15,7 +15,7 @@ interface RecommendationProps {
 interface RecommendedProfile {
   _id: string;
   name: string;
-  age: number;
+  age: number | string;
   location: string;
   profileImage: string;
   lastSeen: string;
@@ -27,13 +27,14 @@ interface RecommendedProfile {
   languages?: string[];
   gender?: string;
   id?: string;
+  matchPercentage?: number;
 }
 
 export default function Recommendation({ activeTab }: RecommendationProps) {
   const [profiles, setProfiles] = useState<RecommendedProfile[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // In‑memory UI state – no persistence across refreshes
+  // In‑memory UI state
   const [isSendingConnection, setIsSendingConnection] = useState<{ [key: string]: boolean }>({});
   const [isSendingLike, setIsSendingLike] = useState<{ [key: string]: boolean }>({});
   const [likedProfiles, setLikedProfiles] = useState<Set<string>>(new Set());
@@ -51,7 +52,7 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
 
       setLoading(true);
 
-      const res = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/partner/match", {
+      const res = await fetch("https://merimonial-backend.onrender.com/api/match/preferences-profiles", {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
@@ -60,35 +61,43 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
 
       if (!res.ok) throw new Error("Failed to fetch recommendations");
 
-      const data = await res.json();
+      const responseData = await res.json();
 
-      if (!data.success || !data.users) throw new Error("Invalid response format");
+      if (!responseData.success || !responseData.data) throw new Error("Invalid response format");
 
-      // Filter out permanently skipped profiles – liked/connected remain visible
-      const filteredUsers = data.users.filter((p: any) => 
-        !permanentlySkipped.has(p._id)
+      // Filter out permanently skipped profiles
+      const filteredProfiles = responseData.data.filter(
+        (item: any) => !permanentlySkipped.has(item._id)
       );
 
-      const cleaned = filteredUsers.map((p: any) => {
-        const dob = new Date(p.dateOfBirth);
-        const age = isNaN(dob.getTime())
-          ? 0
-          : new Date().getFullYear() - dob.getFullYear();
+      // Map API items to our component's expected structure
+      const cleaned = filteredProfiles.map((item: any) => {
+        const locationPref = item.preferences?.location || {};
+        const location = [locationPref.city, locationPref.state, locationPref.country]
+          .filter(Boolean)
+          .join(", ") || "—";
+
+        const heightPref = item.preferences?.height;
+        const height = heightPref
+          ? `${heightPref.min} - ${heightPref.max}`
+          : "—";
 
         return {
-          _id: p._id,
-          id: p.id || p._id,
-          name: `${p.firstName} ${p.lastName}`.trim(),
-          age,
-          location: [p.city, p.state, p.country].filter(Boolean).join(", ") || "—",
-          profileImage: p.profileImage || "/default-avatar.png",
-          height: p.height || "—",
-          religion: p.religion || "—",
-          profession: p.designation || "—",
-          salary: p.annualIncome || "—",
-          education: p.highestEducation || "—",
-          languages: p.motherTongue ? [p.motherTongue] : ["—"],
+          _id: item._id,
+          id: item.userId || item._id,
+          name: item.name || "—",
+          age: "—",
+          location,
+          profileImage: item.image || "/default-avatar.png",
+          height,
+          religion: item.preferences?.religion || "—",
+          profession: item.preferences?.profession || "—",
+          salary: "—",
+          education: item.preferences?.education || "—",
+          languages: ["—"],
           lastSeen: "Recently",
+          gender: item.gender || "—",
+          matchPercentage: item.matchPercentage,
         };
       });
 
@@ -99,7 +108,7 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
     } finally {
       setLoading(false);
     }
-  }, [permanentlySkipped]); // connectedProfiles removed
+  }, [permanentlySkipped]);
 
   useEffect(() => {
     if (activeTab === "Preference") {
@@ -115,25 +124,24 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
     setProfiles((prev) => prev.filter((p) => p._id !== id));
   };
 
-  // SEND CONNECTION
+  // ✅ CORRECTED: send connection request with receiverId
   const handleSendConnection = async (id: string) => {
     try {
       const token = localStorage.getItem("authToken");
       
       if (connectedProfiles.has(id)) {
-        // Already connected – do nothing
         return;
       }
 
       setIsSendingConnection((prev) => ({ ...prev, [id]: true }));
 
-      const response = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/request/send", {
+      const response = await fetch("https://merimonial-backend.onrender.com/api/request/send", {
         method: "POST",
         headers: { 
           Authorization: `Bearer ${token}`, 
           "Content-Type": "application/json" 
         },
-        body: JSON.stringify({ receiverId: id }),
+        body: JSON.stringify({ receiverId: id }), // ✅ now sends receiverId
       });
 
       if (!response.ok) {
@@ -141,13 +149,18 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
         throw new Error(errorData.message || "Failed to send connection");
       }
 
-      setConnectedProfiles(prev => new Set(prev).add(id));
-      toast.success("Connection request sent!");
+      const data = await response.json();
+      if (data.success) {
+        setConnectedProfiles(prev => new Set(prev).add(id));
+        toast.success("Connection request sent!");
+      } else {
+        throw new Error(data.message || "Failed to send connection");
+      }
       
     } catch (error: any) {
       if (error.message.includes("already sent")) {
         setConnectedProfiles(prev => new Set(prev).add(id));
-        // Optionally show a toast or keep silent
+        toast.success("Connection request already sent!");
       } else {
         toast.error(error.message || "Failed to send connection");
       }
@@ -156,7 +169,7 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
     }
   };
 
-  // SHORTLIST
+  // SHORTLIST (unchanged – uses receiverId)
   const handleShortlist = async (id: string) => {
     try {
       const token = localStorage.getItem("authToken");
@@ -168,7 +181,7 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
 
       setIsSendingLike((prev) => ({ ...prev, [id]: true }));
 
-      const response = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/like/send", {
+      const response = await fetch("https://merimonial-backend.onrender.com/api/like/send", {
         method: "POST",
         headers: { 
           Authorization: `Bearer ${token}`, 
@@ -182,9 +195,13 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
         throw new Error(errorData.message || "Failed to shortlist");
       }
 
-      setLikedProfiles(prev => new Set(prev).add(id));
-      toast.success("Profile liked!");
-      // Do NOT remove profile – only heart turns red
+      const data = await response.json();
+      if (data.success) {
+        setLikedProfiles(prev => new Set(prev).add(id));
+        toast.success("Profile liked!");
+      } else {
+        throw new Error(data.message || "Failed to shortlist");
+      }
       
     } catch (error: any) {
       if (error.message.includes("already liked")) {
@@ -198,18 +215,18 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
     }
   };
 
-  // NOT NOW
+  // NOT NOW – UPDATED to /api/like/unlike with receiverId
   const handleNotNow = async (id: string) => {
     try {
       const token = localStorage.getItem("authToken");
 
-      const response = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/cross/user", {
+      const response = await fetch("https://merimonial-backend.onrender.com/api/like/unlike", {
         method: "POST",
         headers: { 
           Authorization: `Bearer ${token}`, 
           "Content-Type": "application/json" 
         },
-        body: JSON.stringify({ userIdToBlock: id }),
+        body: JSON.stringify({ receiverId: id }), // ✅ now using receiverId
       });
 
       if (!response.ok) {
@@ -217,9 +234,14 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
         throw new Error(errorData.message || "Failed to skip profile");
       }
 
-      setPermanentlySkipped(prev => new Set(prev).add(id));
-      toast.success("Profile skipped!");
-      removeProfile(id);
+      const data = await response.json();
+      if (data.success) {
+        setPermanentlySkipped(prev => new Set(prev).add(id));
+        toast.success("Profile skipped!");
+        removeProfile(id);
+      } else {
+        throw new Error(data.message || "Failed to skip profile");
+      }
       
     } catch (error: any) {
       toast.error(error.message || "Failed to skip profile");
@@ -266,6 +288,7 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
 
                   <p className="text-sm text-gray-500 border-b pb-1">
                     {p.id || p._id} | Last seen {p.lastSeen}
+                    {p.matchPercentage && ` | Match ${p.matchPercentage}%`}
                   </p>
 
                   <p className="text-sm text-gray-700">
@@ -284,7 +307,7 @@ export default function Recommendation({ activeTab }: RecommendationProps) {
                   </p>
                 </div>
 
-                {/* ACTION BUTTONS — RESPONSIVE GRID */}
+                {/* ACTION BUTTONS */}
                 <div
                   className="
                     grid grid-cols-3 md:grid-cols-1 gap-4 

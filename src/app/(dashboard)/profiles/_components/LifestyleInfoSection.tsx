@@ -14,8 +14,8 @@ interface LifestyleInfoSectionProps {
   lifestyleInfo?: LifestyleSection[];
 }
 
-const API_URL = 'https://matrimonial-backend-7ahc.onrender.com/api/profile/self';
-const UPDATE_API_URL = 'https://matrimonial-backend-7ahc.onrender.com/api/profile/update-profile';
+const API_URL = 'https://merimonial-backend.onrender.com/api/profile/self';
+const UPDATE_API_URL = 'https://merimonial-backend.onrender.com/api/profile/update-profile';
 
 /* ---------------- CUSTOM EDIT ICON ---------------- */
 const EditIconRounded = ({ onClick }: { onClick?: () => void }) => (
@@ -89,16 +89,25 @@ const mapApiToSections = (lifestyleHobbies: any): LifestyleSection[] => {
   ];
 };
 
-const mapSectionsToPayload = (sections: LifestyleSection[]) => {
+// Helper to sanitize enum fields: replace empty strings with a default value
+const sanitizeEnum = (value: string, defaultValue: string): string => {
+  return value?.trim() ? value : defaultValue;
+};
+
+// Build payload – adjust if backend expects different structure
+const buildPayload = (sections: LifestyleSection[]) => {
   const payload: any = {};
   sections.forEach((section) => {
     switch (section.label) {
       case 'Personal Habits':
-        payload.diet = section.items[0] || '';
-        payload.smoking = section.items[1] || '';
-        payload.drinking = section.items[2] || '';
+        // For these enum fields, we must send a valid value; default to "No" for smoking/drinking
+        // and "Non-Vegetarian" for diet (adjust as per your backend's enum list)
+        payload.diet = sanitizeEnum(section.items[0] || '', 'Non-Vegetarian');
+        payload.smoking = sanitizeEnum(section.items[1] || '', 'No');
+        payload.drinking = sanitizeEnum(section.items[2] || '', 'No');
         break;
       case 'Assets':
+        // These become booleans; empty string becomes false
         payload.openToPets = section.items[0] === 'Yes';
         payload.ownCar = section.items[1] === 'Yes';
         payload.ownHouse = section.items[2] === 'Yes';
@@ -138,6 +147,8 @@ const mapSectionsToPayload = (sections: LifestyleSection[]) => {
       }
     }
   });
+
+  // Send under "lifestyleHobbies" as per original structure
   return { lifestyleHobbies: payload };
 };
 
@@ -161,6 +172,7 @@ const LifestyleInfoSection: React.FC<LifestyleInfoSectionProps> = ({ lifestyleIn
   const [modalOpen, setModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const autoSaveTimeout = useRef<NodeJS.Timeout | null>(null);
   const isMounted = useRef(true);
@@ -180,7 +192,10 @@ const LifestyleInfoSection: React.FC<LifestyleInfoSectionProps> = ({ lifestyleIn
           headers: { Authorization: `Bearer ${token}` },
         });
 
-        if (!res.ok) throw new Error('Failed to load lifestyle info');
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`Failed to load: ${res.status} - ${text}`);
+        }
 
         const data = await res.json();
         const mapped = mapApiToSections(data?.data?.lifestyleHobbies);
@@ -193,7 +208,7 @@ const LifestyleInfoSection: React.FC<LifestyleInfoSectionProps> = ({ lifestyleIn
         if (!isMounted.current) return;
         setError(err.message);
       } finally {
-        setLoading(false);
+        if (isMounted.current) setLoading(false);
       }
     };
 
@@ -216,7 +231,7 @@ const LifestyleInfoSection: React.FC<LifestyleInfoSectionProps> = ({ lifestyleIn
       const token = localStorage.getItem('authToken');
       if (!token) return;
 
-      const payload = mapSectionsToPayload(updatedValues);
+      const payload = buildPayload(updatedValues);
 
       const res = await fetch(UPDATE_API_URL, {
         method: 'PUT',
@@ -224,21 +239,65 @@ const LifestyleInfoSection: React.FC<LifestyleInfoSectionProps> = ({ lifestyleIn
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) throw new Error('Auto-save failed');
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Auto-save failed:', errorText);
+        setUpdateStatus('Auto-save failed');
+        setTimeout(() => setUpdateStatus(null), 2000);
+        return;
+      }
 
       setInfo(cloneSections(updatedValues));
       setUpdateStatus('Changes auto-saved!');
       setTimeout(() => setUpdateStatus(null), 1500);
-    } catch {
+    } catch (err) {
+      console.error('Auto-save error:', err);
       setUpdateStatus('Auto-save failed');
+      setTimeout(() => setUpdateStatus(null), 2000);
     }
   };
 
-  /* ---------------- MAIN UI ---------------- */
+  /* ---------------- MANUAL SAVE (from modal) ---------------- */
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    setUpdateStatus(null);
+    setError(null);
+
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) throw new Error('Login required.');
+
+      const payload = buildPayload(editValues);
+
+      const res = await fetch(UPDATE_API_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Save failed: ${res.status} - ${errorText}`);
+      }
+
+      setInfo(cloneSections(editValues));
+      setModalOpen(false);
+      setUpdateStatus('Saved successfully!');
+      setTimeout(() => setUpdateStatus(null), 2000);
+    } catch (err: any) {
+      setError(err.message);
+      setUpdateStatus(null);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /* ---------------- RENDER ---------------- */
   if (loading)
     return <div className="bg-[#FFF8F0] p-6 rounded-2xl shadow-sm text-center">Loading...</div>;
 
-  if (error)
+  if (error && !loading)
     return (
       <div className="bg-[#FFF8F0] p-6 rounded-2xl text-red-500 shadow-sm text-center">
         {error}
@@ -247,7 +306,6 @@ const LifestyleInfoSection: React.FC<LifestyleInfoSectionProps> = ({ lifestyleIn
 
   return (
     <div className="bg-[#FFF8F0] rounded-2xl p-4 sm:p-6 shadow-sm">
-
       {updateStatus && (
         <div className="mb-4 p-2 rounded bg-green-100 text-green-700 text-center">
           {updateStatus}
@@ -260,7 +318,7 @@ const LifestyleInfoSection: React.FC<LifestyleInfoSectionProps> = ({ lifestyleIn
         <EditIconRounded onClick={() => { setEditValues(cloneSections(info)); setModalOpen(true); }} />
       </div>
 
-      {/* TWO COLUMN PREVIEW — RESPONSIVE */}
+      {/* TWO COLUMN PREVIEW */}
       <div className="
         grid 
         grid-cols-1 
@@ -313,7 +371,7 @@ const LifestyleInfoSection: React.FC<LifestyleInfoSectionProps> = ({ lifestyleIn
         </div>
       </div>
 
-      {/* ------------------- MODAL ------------------- */}
+      {/* MODAL */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)}>
         <h2 className="text-xl text-center font-Lato text-gray-900 mb-4">
           Edit Lifestyle & Hobbies
@@ -325,7 +383,6 @@ const LifestyleInfoSection: React.FC<LifestyleInfoSectionProps> = ({ lifestyleIn
             handleSave();
           }}
         >
-          {/* scrollable & responsive modal content */}
           <div className="max-h-[60vh] overflow-y-auto pr-1 sm:pr-2 space-y-6 mb-4">
             {editValues.map((section, secIdx) => (
               <div key={secIdx} className="pb-3 border-b last:border-b-0">
@@ -352,6 +409,7 @@ const LifestyleInfoSection: React.FC<LifestyleInfoSectionProps> = ({ lifestyleIn
                         const upd = cloneSections(editValues);
                         upd[secIdx].items.push('');
                         setEditValues(upd);
+                        scheduleAutoSave(upd);
                       }}
                     >
                       + Add
@@ -383,7 +441,6 @@ const LifestyleInfoSection: React.FC<LifestyleInfoSectionProps> = ({ lifestyleIn
                       />
                     </div>
 
-                    {/* remove button only for list-type sections */}
                     {[
                       'Movies',
                       'Food I Cook',
@@ -394,7 +451,7 @@ const LifestyleInfoSection: React.FC<LifestyleInfoSectionProps> = ({ lifestyleIn
                       'Sports',
                       'Cuisine',
                       'Vacation Destination',
-                    ].includes(section.label) && (
+                    ].includes(section.label) && section.items.length > 1 && (
                       <Button
                         type="button"
                         variant="destructive"
@@ -416,7 +473,6 @@ const LifestyleInfoSection: React.FC<LifestyleInfoSectionProps> = ({ lifestyleIn
             ))}
           </div>
 
-          {/* responsive modal footer */}
           <div className="flex flex-col sm:flex-row justify-end gap-2">
             <Button
               type="button"
@@ -428,9 +484,11 @@ const LifestyleInfoSection: React.FC<LifestyleInfoSectionProps> = ({ lifestyleIn
             </Button>
 
             <Button
+              type="submit"
+              disabled={saving}
               className="bg-rose-700 text-white hover:bg-rose-800 w-full sm:w-auto"
             >
-              Save
+              {saving ? 'Saving...' : 'Save'}
             </Button>
           </div>
         </form>

@@ -9,8 +9,8 @@ interface AstroDetailsSectionProps {
   astroDetails?: AstroDetailItem[];
 }
 
-const API_URL = "https://matrimonial-backend-7ahc.onrender.com/api/profile/self";
-const UPDATE_API_URL = "https://matrimonial-backend-7ahc.onrender.com/api/profile/update-profile";
+const API_URL = "https://merimonial-backend.onrender.com/api/profile/self";
+const UPDATE_API_URL = "https://merimonial-backend.onrender.com/api/profile/update-profile";
 
 /** small local token helper */
 function getToken(): string | null {
@@ -26,9 +26,6 @@ const defaultItems = (): AstroDetailItem[] => [
   { label: "Manglik", value: "" },
 ];
 
-// ===============================================
-// CUSTOM EDIT ICON
-// ===============================================
 const EditIconRounded = (props: any) => (
   <svg
     width="22"
@@ -117,74 +114,95 @@ const AstroDetailsSection: React.FC<AstroDetailsSectionProps> = ({ astroDetails 
     });
   };
 
+  // Helper to build the payload – adjust if backend expects different structure
+  const buildPayload = (values: AstroDetailItem[]) => {
+    // Option 1: Send fields directly at root (if backend expects that)
+    return {
+      zodiacSign: values.find((v) => v.label === "Zodiac")?.value ?? "",
+      dateOfBirth: values.find((v) => v.label === "Date of Birth")?.value ?? "",
+      timeOfBirth: values.find((v) => v.label === "Time of Birth")?.value ?? "",
+      cityOfBirth: values.find((v) => v.label === "City of Birth")?.value ?? "",
+      manglik: values.find((v) => v.label === "Manglik")?.value ?? "",
+    };
+
+    // Option 2: If backend expects nested under "astroDetails", use:
+    // return { astroDetails: { ... } };
+    // Uncomment below and comment the above if needed.
+    /*
+    return {
+      astroDetails: {
+        zodiacSign: values.find((v) => v.label === "Zodiac")?.value ?? "",
+        dateOfBirth: values.find((v) => v.label === "Date of Birth")?.value ?? "",
+        timeOfBirth: values.find((v) => v.label === "Time of Birth")?.value ?? "",
+        cityOfBirth: values.find((v) => v.label === "City of Birth")?.value ?? "",
+        manglik: values.find((v) => v.label === "Manglik")?.value ?? "",
+      },
+    };
+    */
+  };
+
   const autoSaveAstro = async (values: AstroDetailItem[]) => {
     try {
       const token = getToken();
       if (!token) return;
 
-      const body = {
-        astroDetails: {
-          zodiacSign: values.find((v) => v.label === "Zodiac")?.value ?? "",
-          dateOfBirth: values.find((v) => v.label === "Date of Birth")?.value ?? "",
-          timeOfBirth: values.find((v) => v.label === "Time of Birth")?.value ?? "",
-          cityOfBirth: values.find((v) => v.label === "City of Birth")?.value ?? "",
-          manglik: values.find((v) => v.label === "Manglik")?.value ?? "",
-        },
-      };
-
+      const payload = buildPayload(values);
       const res = await fetch(UPDATE_API_URL, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(payload),
       });
 
-      if (!res.ok) return;
+      if (!res.ok) {
+        // Try to get error details from response
+        const errorText = await res.text();
+        console.error("Auto-save failed:", errorText);
+        return;
+      }
 
       setInfo(values);
       setUpdateStatus("Changes auto-saved");
       setTimeout(() => setUpdateStatus(null), 1400);
-    } catch {}
+    } catch (err) {
+      console.error("Auto-save error:", err);
+    }
   };
 
   const handleSave = async () => {
     if (savingRef.current) return;
     savingRef.current = true;
     setUpdateStatus(null);
+    setError(null);
 
     try {
       const token = getToken();
       if (!token) throw new Error("No authentication token found. Please log in.");
 
-      const body = {
-        astroDetails: {
-          zodiacSign: editValues.find((v) => v.label === "Zodiac")?.value ?? "",
-          dateOfBirth: editValues.find((v) => v.label === "Date of Birth")?.value ?? "",
-          timeOfBirth: editValues.find((v) => v.label === "Time of Birth")?.value ?? "",
-          cityOfBirth: editValues.find((v) => v.label === "City of Birth")?.value ?? "",
-          manglik: editValues.find((v) => v.label === "Manglik")?.value ?? "",
-        },
-      };
-
+      const payload = buildPayload(editValues);
       const res = await fetch(UPDATE_API_URL, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(payload),
       });
 
-      if (!res.ok) throw new Error("Save failed");
+      if (!res.ok) {
+        const errorData = await res.text();
+        throw new Error(`Save failed: ${res.status} - ${errorData}`);
+      }
 
       setInfo(editValues);
       setModalOpen(false);
       setUpdateStatus("Astro details saved successfully!");
       setTimeout(() => setUpdateStatus(null), 2000);
     } catch (err: any) {
-      setUpdateStatus(err.message || "Save failed");
+      setError(err.message || "Save failed");
+      setUpdateStatus(null);
     } finally {
       savingRef.current = false;
     }
@@ -198,7 +216,7 @@ const AstroDetailsSection: React.FC<AstroDetailsSectionProps> = ({ astroDetails 
     );
   }
 
-  if (error) {
+  if (error && !loading) {
     return (
       <div className="bg-[#FFF8F0] rounded-2xl p-6 shadow-sm text-red-500 text-center">
         {error}
@@ -208,7 +226,6 @@ const AstroDetailsSection: React.FC<AstroDetailsSectionProps> = ({ astroDetails 
 
   return (
     <div className="bg-[#FFF8F0] rounded-2xl p-4 sm:p-6 shadow-sm">
-
       {updateStatus && (
         <div
           className={`mb-4 p-2 rounded text-center text-sm ${
@@ -230,7 +247,7 @@ const AstroDetailsSection: React.FC<AstroDetailsSectionProps> = ({ astroDetails 
         </div>
       </div>
 
-      {/* DETAILS LIST — responsive */}
+      {/* DETAILS LIST */}
       <div className="space-y-2">
         {info.map((item, i) => (
           <div
@@ -276,7 +293,6 @@ const AstroDetailsSection: React.FC<AstroDetailsSectionProps> = ({ astroDetails 
             ))}
           </div>
 
-          {/* Buttons responsive */}
           <div className="flex flex-col sm:flex-row justify-end gap-2">
             <Button
               type="button"

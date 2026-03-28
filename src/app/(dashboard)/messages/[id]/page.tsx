@@ -71,7 +71,7 @@ export default function ProfilePage() {
       }
       try {
         const res = await fetch(
-          `https://matrimonial-backend-7ahc.onrender.com/api/profile/users/${id}`
+          `https://merimonial-backend.onrender.com/api/profile/users/${id}`
         );
         if (!res.ok) throw new Error("Network response was not ok");
         const data = await res.json();

@@ -10,8 +10,8 @@ interface ReligiousInfoSectionProps {
   religiousInfo: ReligiousInfoItem[];
 }
 
-const API_URL = 'https://matrimonial-backend-7ahc.onrender.com/api/profile/self';
-const UPDATE_API_URL = 'https://matrimonial-backend-7ahc.onrender.com/api/profile/update-profile';
+const API_URL = 'https://merimonial-backend.onrender.com/api/profile/self';
+const UPDATE_API_URL = 'https://merimonial-backend.onrender.com/api/profile/update-profile';
 
 const EditIconRounded = (props: any) => (
   <svg

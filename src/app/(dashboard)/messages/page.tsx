@@ -1,11 +1,14 @@
+// app/(dashboard)/messages/page.tsx (or wherever your chat page lives)
 "use client";
 
 import { useState, useEffect } from "react";
 import { io, Socket } from "socket.io-client";
 import MessageSidebar from "@/app/(dashboard)/messages/_components/MessageSidebar";
 import ChatArea from "@/app/(dashboard)/messages/_components/ChatArea";
-import { Conversation } from "@/types/chat";
+import { Conversation, Message } from "@/types/chat";
 import { MessageCircle, Menu } from "lucide-react";
+
+const API_BASE_URL = "https://merimonial-backend.onrender.com"; 
 
 interface User {
   _id: string;
@@ -18,25 +21,18 @@ let socket: Socket;
 
 export default function Home() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [selectedConversation, setSelectedConversation] =
-    useState<Conversation | null>(null);
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]); // messages for selected conversation
 
-  // 👉 MOBILE ONLY SIDEBAR CONTROL
+  // UI state
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
 
-  const [messagesMap, setMessagesMap] = useState<
-    Record<string, { sender: string; text: string }[]>
-  >({});
-
-  /* -------------------------------------------
-     FETCH TOKEN
-  -------------------------------------------- */
+  // 1. Get token from localStorage
   useEffect(() => {
     const storedToken = localStorage.getItem("authToken");
     if (storedToken) {
@@ -48,8 +44,10 @@ export default function Home() {
     }
   }, []);
 
+  // 2. Decode token, set currentUser, connect socket, fetch users
   const decodeUserAndInitSocket = async (authToken: string) => {
     try {
+      // Decode JWT to get userId
       const tokenData = JSON.parse(atob(authToken.split(".")[1]));
       if (!tokenData.userId) throw new Error("Invalid token format");
 
@@ -60,11 +58,13 @@ export default function Home() {
       };
       setCurrentUser(user);
 
-      socket = io("https://matrimonial-backend-7ahc.onrender.com", {
+      // Connect socket
+      socket = io(API_BASE_URL, {
         transports: ["websocket"],
       });
       socket.emit("add-user", user._id);
 
+      // Fetch all users (contacts)
       await fetchAllUsers(authToken, user);
     } catch (err) {
       console.error(err);
@@ -74,36 +74,47 @@ export default function Home() {
     }
   };
 
+  // 3. Fetch users from API (use correct endpoint)
   const fetchAllUsers = async (authToken: string, user: User) => {
     try {
-      const res = await fetch(
-        "https://matrimonial-backend-7ahc.onrender.com/api/message/AllUser",
-        { headers: { Authorization: `Bearer ${authToken}` } }
-      );
+      const res = await fetch(`${API_BASE_URL}/api/message/allUser`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
 
       const data = await res.json();
+      console.log("All users response:", data);
 
-      const mapped: Conversation[] = data.data
-        .filter((u: User) => u._id !== user._id)
-        .map((u: User) => ({
-          id: u._id,
-          name: `${u.firstName} ${u.lastName}`.trim(),
-          avatar: u.profileImage || "/default-avatar.png",
-          lastMessage: "",
-          isOnline: true,
-          unreadCount: 0,
-        }));
+      if (data.success && Array.isArray(data.data)) {
+        // Find full current user info (with profileImage)
+        const fullCurrent = data.data.find((u: User) => u._id === user._id);
+        if (fullCurrent) setCurrentUser(fullCurrent);
 
-      setConversations(mapped);
+        // Map other users to Conversation objects
+        const mapped: Conversation[] = data.data
+          .filter((u: User) => u._id !== user._id)
+          .map((u: User) => ({
+            id: u._id,
+            name: `${u.firstName} ${u.lastName}`.trim(),
+            avatar: u.profileImage || "/default-avatar.png",
+            lastMessage: "",
+            isOnline: false, // will be updated by socket events
+            unreadCount: 0,
+          }));
+
+        setConversations(mapped);
+      } else {
+        console.error("Unexpected API response:", data);
+        setError("Failed to load users");
+      }
     } catch (err) {
-      console.error(err);
+      console.error("Error fetching users:", err);
       setError("Network error while fetching users");
     }
   };
 
+  // 4. Handle message sent – update conversations list and messages
   const handleMessageSent = (conversationId: string, text: string) => {
-    if (!currentUser) return;
-
+    // Update lastMessage in conversations list
     setConversations((prev) =>
       prev.map((c) =>
         c.id === conversationId
@@ -111,35 +122,60 @@ export default function Home() {
           : c
       )
     );
-
-    setMessagesMap((prev) => ({
-      ...prev,
-      [conversationId]: [
-        ...(prev[conversationId] || []),
-        { sender: currentUser._id, text },
-      ],
-    }));
+    // Optionally, you could also add the message to messages state here,
+    // but ChatArea already does that via optimistic update.
   };
 
+  // 5. Listen for online/offline events to update isOnline in conversations
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleUserOnline = (userId: string) => {
+      setConversations((prev) =>
+        prev.map((c) => (c.id === userId ? { ...c, isOnline: true } : c))
+      );
+    };
+    const handleUserOffline = (userId: string) => {
+      setConversations((prev) =>
+        prev.map((c) => (c.id === userId ? { ...c, isOnline: false } : c))
+      );
+    };
+
+    socket.on("user-online", handleUserOnline);
+    socket.on("user-offline", handleUserOffline);
+
+    return () => {
+      socket.off("user-online", handleUserOnline);
+      socket.off("user-offline", handleUserOffline);
+    };
+  }, [socket]);
+
+  // Loading and error states
   if (isLoading)
     return (
       <div className="min-h-screen flex items-center justify-center">
-        Loading...
+        <div className="animate-spin w-10 h-10 border-b-2 border-indigo-600 rounded-full" />
       </div>
     );
 
   if (error)
     return (
-      <div className="min-h-screen flex items-center justify-center text-red-600">
-        {error}
+      <div className="min-h-screen flex items-center justify-center text-center px-4">
+        <div>
+          <p className="text-red-600">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
 
-
   return (
     <div className="flex h-screen overflow-hidden bg-gray-100">
-
-      {/* 🔥 MOBILE OVERLAY */}
+      {/* Mobile overlay */}
       {isSidebarOpen && (
         <div
           onClick={() => setIsSidebarOpen(false)}
@@ -147,7 +183,7 @@ export default function Home() {
         />
       )}
 
-      {/* SIDEBAR */}
+      {/* Sidebar */}
       <div
         className={`
           fixed md:static top-0 left-0 h-full z-40
@@ -164,17 +200,23 @@ export default function Home() {
           socket={socket}
           onSelectConversation={(conv) => {
             setSelectedConversation(conv);
-            setIsSidebarOpen(false); // 👈 MOBILE AUTO CLOSE
+            setIsSidebarOpen(false); // close sidebar on mobile
+            // Clear messages when switching conversation
+            setMessages([]);
           }}
           onCloseSidebar={() => setIsSidebarOpen(false)}
           onRetry={() => window.location.reload()}
+          onLogout={() => {
+            if (socket) socket.disconnect();
+            localStorage.removeItem("authToken");
+            window.location.href = "/login"; // adjust your login route
+          }}
         />
       </div>
 
-      {/* CHAT AREA */}
+      {/* Chat Area */}
       <div className="flex-1 relative overflow-hidden">
-
-        {/* 🔥 MOBILE HEADER */}
+        {/* Mobile header */}
         <div className="md:hidden flex items-center gap-3 p-3 border-b bg-white">
           <button
             onClick={() => setIsSidebarOpen(true)}
@@ -190,13 +232,8 @@ export default function Home() {
             conversation={selectedConversation}
             currentUser={currentUser}
             socket={socket}
-            messages={messagesMap[selectedConversation.id] || []}
-            setMessages={(msgs) =>
-              setMessagesMap((prev) => ({
-                ...prev,
-                [selectedConversation.id]: msgs,
-              }))
-            }
+            messages={messages}
+            setMessages={setMessages}
             onOpenSidebar={() => setIsSidebarOpen(true)}
             onMessageSent={handleMessageSent}
           />

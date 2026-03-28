@@ -48,7 +48,7 @@ interface Profile {
   status: "active" | "shortlisted" | "sent" | "notNow"
 }
 
-const API_BASE_URL = "https://matrimonial-backend-7ahc.onrender.com/api/like/theyShortlist"
+const API_BASE_URL = "https://merimonial-backend.onrender.com/api/like/theyShortlist"
 
 export default function TheyShortlisted() {
   const [profiles, setProfiles] = useState<Profile[]>([])
@@ -118,7 +118,7 @@ export default function TheyShortlisted() {
 
       setIsProcessing(prev => ({ ...prev, [id]: true }))
 
-      const res = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/request/send", {
+      const res = await fetch("https://merimonial-backend.onrender.com/api/request/send", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ receiverId: id }),
@@ -143,7 +143,7 @@ export default function TheyShortlisted() {
 
       setIsProcessing(prev => ({ ...prev, [id]: true }))
 
-      const res = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/cross/user", {
+      const res = await fetch("https://merimonial-backend.onrender.com/api/cross/user", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ userIdToBlock: id }),

@@ -13,12 +13,12 @@
     }
   ],
   "env": {
-    "NEXT_PUBLIC_API_URL": "https://matrimonial-backend-7ahc.onrender.com",
+    "NEXT_PUBLIC_API_URL": "https://merimonial-backend.onrender.com",
     "NEXTAUTH_URL": "https://vercel.com/qurilos-projects/matro-br87"
   },
   "build": {
     "env": {
-      "NEXT_PUBLIC_API_URL": "https://matrimonial-backend-7ahc.onrender.com",
+      "NEXT_PUBLIC_API_URL": "https://merimonial-backend.onrender.com",
       "NEXTAUTH_URL": "https://vercel.com/qurilos-projects/matro-br87"
     }
   }

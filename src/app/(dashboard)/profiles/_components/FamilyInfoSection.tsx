@@ -10,9 +10,9 @@ interface FamilyInfoSectionProps {
   familyInfo?: FamilyInfoItem[];
 }
 
-const API_URL = "https://matrimonial-backend-7ahc.onrender.com/api/profile/self";
+const API_URL = "https://merimonial-backend.onrender.com/api/profile/self";
 const UPDATE_API_URL =
-  "https://matrimonial-backend-7ahc.onrender.com/api/profile/update-profile";
+  "https://merimonial-backend.onrender.com/api/profile/update-profile";
 
 const getToken = () =>
   typeof window !== "undefined" ? localStorage.getItem("authToken") : null;

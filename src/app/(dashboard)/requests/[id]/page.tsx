@@ -71,7 +71,7 @@ function ProfilePage() {
 
       try {
         const response = await fetch(
-          `https://matrimonial-backend-7ahc.onrender.com/api/profile/users/${id}`
+          `https://merimonial-backend.onrender.com/api/profile/users/${id}`
         );
         if (!response.ok) throw new Error("Network response was not ok");
 
@@ -282,12 +282,7 @@ function ProfilePage() {
                   </button>
 
                   <div className="flex flex-col items-center">
-                    <button className="flex items-center justify-center bg-gradient-to-br from-[#2BFF88] to-[#2BD2FF] text-white rounded-full w-10 h-10 md:w-12 md:h-12 transition-all shadow-lg hover:scale-105">
-                      <Check className="w-5 h-5 md:w-6 md:h-6" />
-                    </button>
-                    <span className="text-sm font-medium mt-1 text-gray-700">
-                      Accept
-                    </span>
+                   
                   </div>
 
                 </div>
@@ -316,12 +311,7 @@ function ProfilePage() {
               </button>
 
               <div className="flex flex-col items-center">
-                <button className="flex items-center justify-center bg-gradient-to-br from-[#2BFF88] to-[#2BD2FF] text-white rounded-full w-10 h-10 sm:w-12 sm:h-12 shadow-lg hover:scale-105 transition-transform">
-                  <Check className="w-6 h-6" />
-                </button>
-                <span className="text-xs sm:text-sm font-medium mt-1 text-gray-700">
-                  Accept
-                </span>
+                
               </div>
 
             </div>

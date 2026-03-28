@@ -64,7 +64,7 @@ const Level1Form = ({
       const cleanedPhone = phoneNumber.trim().replace(/\D/g, '');
 
       const response = await fetch(
-        'https://matrimonial-backend-7ahc.onrender.com/auth/otp-login-request',
+        'https://merimonial-backend.onrender.com/auth/otp-login-request',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -78,7 +78,13 @@ const Level1Form = ({
         throw new Error(data.message || 'Failed to send OTP');
       }
 
-      toast.success(data.message || 'OTP sent successfully');
+      // ✅ Show OTP in toast if available (for testing)
+      if (data.otp) {
+        toast.success(`OTP sent: ${data.otp}`);
+      } else {
+        toast.success(data.message || 'OTP sent successfully');
+      }
+
       setShowOtpField(true);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to send OTP';
@@ -97,7 +103,7 @@ const Level1Form = ({
       const cleanedPhone = phoneNumber.trim().replace(/\D/g, '');
 
       const response = await fetch(
-        'https://matrimonial-backend-7ahc.onrender.com/auth/login',
+        'https://merimonial-backend.onrender.com/auth/login',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -225,5 +231,4 @@ Level1Form.propTypes = {
   onLoginSuccess: PropTypes.func.isRequired,
 };
 
-// ❌ REMOVE THE DUPLICATE EXPORT
 export default Level1Form;

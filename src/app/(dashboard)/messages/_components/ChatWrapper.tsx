@@ -1,3 +1,4 @@
+// components/ChatWrapper.tsx
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -20,6 +21,8 @@ interface ChatWrapperProps {
 
 let socket: Socket;
 
+const API_BASE_URL = "https://merimonial-backend.onrender.com"; // match your tunnel
+
 export default function ChatWrapper({ testToken }: ChatWrapperProps) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -30,9 +33,10 @@ export default function ChatWrapper({ testToken }: ChatWrapperProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [messages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // 1. Load token and initialize
   useEffect(() => {
     const storedToken = localStorage.getItem("authToken") || testToken;
 
@@ -47,31 +51,27 @@ export default function ChatWrapper({ testToken }: ChatWrapperProps) {
 
   const initializeApp = async (authToken: string) => {
     try {
+      // Decode token to get userId
       let userId: string | undefined;
-
       try {
         const tokenData = JSON.parse(atob(authToken.split(".")[1]));
         userId = tokenData.userId;
-
-        if (userId) {
-          setCurrentUser({
-            _id: userId,
-            firstName: "Current",
-            lastName: "User",
-          });
-        }
       } catch {
         setError("Invalid token");
         return;
       }
 
-      socket = io("https://matrimonial-backend-7ahc.onrender.com", {
+      // Connect socket
+      socket = io(API_BASE_URL, {
         transports: ["websocket"],
       });
 
       if (userId) socket.emit("add-user", userId);
 
-      await fetchAllUsers(authToken);
+      // Fetch all users (this will also set currentUser with full details)
+      await fetchAllUsers(authToken, userId);
+
+      // Setup socket listeners
       setupSocketListeners();
     } catch (err) {
       console.error(err);
@@ -81,17 +81,33 @@ export default function ChatWrapper({ testToken }: ChatWrapperProps) {
     }
   };
 
-  const fetchAllUsers = async (authToken: string) => {
+  const fetchAllUsers = async (authToken: string, currentUserId?: string) => {
     try {
-      const res = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/message/allUser", {
+      const res = await fetch(`${API_BASE_URL}/api/message/allUser`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
 
       const data = await res.json();
+      console.log("API response from /allUser:", data);
 
       if (data.success && Array.isArray(data.data)) {
+        // Find the current user's full info
+        const fullCurrentUser = data.data.find((u: User) => u._id === currentUserId);
+        if (fullCurrentUser) {
+          setCurrentUser(fullCurrentUser);
+          console.log("Current user set:", fullCurrentUser);
+        } else {
+          // Fallback: set a placeholder
+          setCurrentUser({
+            _id: currentUserId || "",
+            firstName: "Current",
+            lastName: "User",
+          });
+        }
+
+        // Map other users to conversations (exclude current user)
         const mapped = data.data
-          .filter((u: User) => u._id !== currentUser?._id)
+          .filter((u: User) => u._id !== currentUserId)
           .map((user: User) => ({
             id: user._id,
             name: `${user.firstName} ${user.lastName}`.trim(),
@@ -102,12 +118,13 @@ export default function ChatWrapper({ testToken }: ChatWrapperProps) {
           }));
 
         setConversations(mapped);
-
-        const fullUser = data.data.find((u: User) => u._id === currentUser?._id);
-        if (fullUser) setCurrentUser(fullUser);
+        console.log("Mapped conversations:", mapped);
+      } else {
+        console.error("Unexpected API response:", data);
+        setError("Failed to load users");
       }
     } catch (err) {
-      console.error(err);
+      console.error("Error fetching users:", err);
       setError("Failed to fetch users");
     }
   };
@@ -116,7 +133,7 @@ export default function ChatWrapper({ testToken }: ChatWrapperProps) {
     if (!socket || !currentUser) return;
 
     const mapSocketToLocal = (msg: SocketMessage): Message => ({
-      id: msg._id || msg.tempId || "msg-" + Date.now(),
+      id: msg._id || msg.tempId || `msg-${Date.now()}`,
       senderId: msg.senderId || msg.from,
       receiverId: msg.receiverId || msg.to,
       text: msg.messageText || "",
@@ -134,10 +151,35 @@ export default function ChatWrapper({ testToken }: ChatWrapperProps) {
       if (!selectedConversation) return;
       if (msg.senderId !== selectedConversation.id) return;
 
+      const newMsg = mapSocketToLocal(msg);
+      setMessages((prev) => [...prev, newMsg]);
+
+      // Update last message in conversations list
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === selectedConversation.id
+            ? { ...c, lastMessage: newMsg.text }
+            : c
+        )
+      );
     });
 
-    socket.on("msg-sent", (msg: SocketMessage) => {});
-    
+    socket.on("msg-sent", (msg: SocketMessage) => {
+      if (!selectedConversation) return;
+      if (msg.receiverId !== selectedConversation.id) return;
+
+      const newMsg = mapSocketToLocal(msg);
+      setMessages((prev) => [...prev, newMsg]);
+
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === selectedConversation.id
+            ? { ...c, lastMessage: newMsg.text }
+            : c
+        )
+      );
+    });
+
     socket.on("user-online", (userId: string) => {
       setConversations((prev) =>
         prev.map((c) => (c.id === userId ? { ...c, isOnline: true } : c))
@@ -151,6 +193,19 @@ export default function ChatWrapper({ testToken }: ChatWrapperProps) {
     });
   };
 
+  const handleLogout = () => {
+    if (socket) socket.disconnect();
+    localStorage.removeItem("authToken");
+    window.location.reload(); // or redirect to login
+  };
+
+  const handleRetry = () => {
+    if (token) {
+      setIsLoading(true);
+      setError(null);
+      initializeApp(token);
+    }
+  };
 
   if (isLoading)
     return (
@@ -165,7 +220,7 @@ export default function ChatWrapper({ testToken }: ChatWrapperProps) {
         <div>
           <p className="text-red-600">{error}</p>
           <button
-            onClick={() => token && initializeApp(token)}
+            onClick={handleRetry}
             className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded"
           >
             Retry
@@ -176,8 +231,7 @@ export default function ChatWrapper({ testToken }: ChatWrapperProps) {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-gray-50">
-
-      {/* SIDEBAR RESPONSIVE */}
+      {/* Sidebar (responsive) */}
       <div
         className={`
           fixed top-0 left-0 h-full w-72 bg-white shadow-md z-30 
@@ -195,24 +249,23 @@ export default function ChatWrapper({ testToken }: ChatWrapperProps) {
             setIsSidebarOpen(false);
           }}
           onCloseSidebar={() => setIsSidebarOpen(false)}
-          onLogout={() => {
-            socket.disconnect();
-            localStorage.removeItem("authToken");
-            window.location.reload();
-          }}
+          onRetry={handleRetry}
+          onLogout={handleLogout}
           socket={socket}
         />
       </div>
 
-      {/* MAIN CHAT AREA */}
+      {/* Main chat area */}
       <div className="flex-1 h-full relative bg-gray-100">
-
         {selectedConversation ? (
           <ChatArea
             conversation={selectedConversation}
             currentUser={currentUser}
             socket={socket}
             onOpenSidebar={() => setIsSidebarOpen(true)}
+            onMessageSent={() => {}} // optional
+            messages={messages}
+            setMessages={setMessages}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-center">
@@ -223,7 +276,7 @@ export default function ChatWrapper({ testToken }: ChatWrapperProps) {
           </div>
         )}
 
-        {/* MOBILE — OPEN SIDEBAR BUTTON */}
+        {/* Mobile open sidebar button (only when no conversation selected) */}
         {!selectedConversation && (
           <button
             onClick={() => setIsSidebarOpen(true)}

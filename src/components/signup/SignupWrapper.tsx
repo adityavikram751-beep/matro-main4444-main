@@ -20,8 +20,11 @@ const SignupWrapper = ({
   // Step 1 fields
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [gender, setGender] = useState(''); 
+  const [age, setAge] = useState('');
   const [email, setEmail] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
+  // No adhaar state needed
 
   // Step 2 fields
   const [otp, setOtp] = useState('');
@@ -40,24 +43,25 @@ const SignupWrapper = ({
 
   return (
     <div className="max-w-md mx-auto p-4">
-
-      {/* ---------------- STEP 1 ---------------- */}
       {step === 1 && (
         <Follow1Form
           firstName={firstName}
           setFirstName={setFirstName}
           lastName={lastName}
           setLastName={setLastName}
+          gender={gender}
+          setGender={setGender}
+          age={age}
+          setAge={setAge}
           email={email}
           setEmail={setEmail}
           mobileNumber={mobileNumber}
           setMobileNumber={setMobileNumber}
-          onBack={() => setStep(1)}
+          onBack={handleBackToFollow1}
           handleContinueFollow2={handleContinueFollow2}
         />
       )}
 
-      {/* ---------------- STEP 2 ---------------- */}
       {step === 2 && (
         <Follow2Form
           otp={otp}
@@ -67,7 +71,6 @@ const SignupWrapper = ({
           closeModal={closeModal}
           setIsProfileSetupOpen={setIsProfileSetupOpen}
           onSignupSuccess={(token, userId) => {
-            // bubble final result to parent
             onSignupSuccess(token, userId);
           }}
         />

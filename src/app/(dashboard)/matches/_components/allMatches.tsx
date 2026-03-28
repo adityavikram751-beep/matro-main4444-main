@@ -13,27 +13,27 @@ interface AllMatchesProps {
 }
 
 interface MatchProfile {
-  id: string;
-  profileId: string;
+  id: string;           // user ID (_id from API)
   name: string;
   image: string;
+  quote?: string;
+  partnerName?: string;
   age: string | number;
   height: string;
   caste: string;
   profession: string;
-  salary: string;
+  salary: string;        // maps to income
   education: string;
   location: string;
   languages: string[];
   lastSeen: string;
-  _id?: string;
 }
 
 export default function AllMatches({ activeTab }: AllMatchesProps) {
   const [matches, setMatches] = useState<MatchProfile[]>([]);
   const [isLoadingMatches, setIsLoadingMatches] = useState(false);
 
-  // In‑memory UI state – no persistence across refreshes
+  // UI state
   const [isSendingConnection, setIsSendingConnection] = useState<Record<string, boolean>>({});
   const [isSendingLike, setIsSendingLike] = useState<Record<string, boolean>>({});
   const [likedProfiles, setLikedProfiles] = useState<Set<string>>(new Set());
@@ -44,13 +44,6 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
   const profilesPerPage = 10;
   const router = useRouter();
 
-  const calculateAge = (dob: string) => {
-    if (!dob) return "—";
-    const birthDate = new Date(dob);
-    if (isNaN(birthDate.getTime())) return "—";
-    return new Date().getFullYear() - birthDate.getFullYear();
-  };
-
   const fetchAllMatches = useCallback(async () => {
     try {
       const token = localStorage.getItem("authToken");
@@ -59,7 +52,7 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
       setIsLoadingMatches(true);
 
       const response = await fetch(
-        "https://matrimonial-backend-7ahc.onrender.com/api/like/profileMatch",
+        "https://merimonial-backend.onrender.com/api/match/all",
         {
           method: "GET",
           headers: {
@@ -69,42 +62,45 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
         }
       );
 
-      if (!response.ok) return;
+      if (!response.ok) {
+        throw new Error("Failed to fetch matches");
+      }
 
-      const data = await response.json();
-      if (!data.success || !data.users) return;
+      const result = await response.json();
+      if (!result.success || !result.data) {
+        throw new Error("Invalid response");
+      }
 
-      // Filter out only permanently skipped profiles – connected/liked profiles remain visible
-      const filteredUsers = data.users.filter((user: any) => 
-        !permanentlySkipped.has(user._id)
+      // Filter out permanently skipped profiles (by user ID)
+      const filteredUsers = result.data.filter(
+        (item: any) => !permanentlySkipped.has(item._id)
       );
 
-      const cleaned = filteredUsers.map((user: any) => ({
-        id: user._id,
-        profileId: user.id,
-        name: `${user.firstName} ${user.lastName}`.trim(),
-        image: user.profileImage || "/no-img.png",
-        age: calculateAge(user.dateOfBirth),
-        height: user.height || "—",
-        caste: user.caste || "—",
-        profession: user.designation || "—",
-        salary: user.annualIncome || "—",
-        education: user.highestEducation || "—",
-        location: `${user.city}${user.state ? ", " + user.state : ""}${
-          user.country ? ", " + user.country : ""
-        }`,
-        languages: [user.motherTongue || "—"],
+      const cleaned: MatchProfile[] = filteredUsers.map((item: any) => ({
+        id: item._id,
+        name: item.name || "Unknown",
+        image: item.profileImage || "/no-img.png",
+        quote: item.quote,
+        partnerName: item.partnerName,
+        age: item.age ?? "—",
+        height: item.height || "—",
+        caste: item.caste || "—",
+        profession: item.profession || "—",
+        salary: item.income || "—",
+        education: item.education || "—",
+        location: item.location || "—",
+        languages: ["—"],
         lastSeen: "Recently",
-        _id: user._id
       }));
 
       setMatches(cleaned);
-    } catch {
-      // Silently fail
+    } catch (error) {
+      console.error("Error fetching matches:", error);
+      toast.error("Failed to load matches");
     } finally {
       setIsLoadingMatches(false);
     }
-  }, [permanentlySkipped]); // connectedProfiles removed from dependencies
+  }, [permanentlySkipped]);
 
   useEffect(() => {
     if (activeTab === "Profile Match") {
@@ -113,28 +109,28 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
     }
   }, [activeTab, fetchAllMatches]);
 
-  const removeProfile = (id: string) => {
-    setMatches((prev) => prev.filter((p) => p.id !== id));
+  const removeProfile = (userId: string) => {
+    setMatches((prev) => prev.filter((p) => p.id !== userId));
   };
 
-  const handleSendConnection = async (id: string) => {
+  // Send connection request – expects receiverId = userId
+  const handleSendConnection = async (userId: string) => {
     try {
       const token = localStorage.getItem("authToken");
-      
-      if (connectedProfiles.has(id)) {
-        // Already connected, do nothing
-        return;
+
+      if (connectedProfiles.has(userId)) {
+        return; // already connected
       }
 
-      setIsSendingConnection((prev) => ({ ...prev, [id]: true }));
+      setIsSendingConnection((prev) => ({ ...prev, [userId]: true }));
 
-      const response = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/request/send", {
+      const response = await fetch("https://merimonial-backend.onrender.com/api/request/send", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ receiverId: id }),
+        body: JSON.stringify({ receiverId: userId }),
       });
 
       if (!response.ok) {
@@ -142,40 +138,43 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
         throw new Error(errorData.message || "Failed");
       }
 
-      // Mark as connected but keep profile visible
-      setConnectedProfiles(prev => new Set(prev).add(id));
-      toast.success("Connection request sent!");
-      
-    } catch (error: any) {
-      if (error.message.includes("already sent")) {
-        // Even if already sent, mark as connected for UI
-        setConnectedProfiles(prev => new Set(prev).add(id));
-        // Optionally show a neutral message or nothing
+      const result = await response.json();
+      if (result.success) {
+        setConnectedProfiles((prev) => new Set(prev).add(userId));
+        toast.success("Connection request sent!");
+        fetchAllMatches();
       } else {
-        toast.error(" send connection request.");
+        throw new Error(result.message || "Request failed");
+      }
+    } catch (error: any) {
+      if (error.message?.includes("already sent")) {
+        setConnectedProfiles((prev) => new Set(prev).add(userId));
+      } else {
+        toast.error("Failed to send connection request");
       }
     } finally {
-      setIsSendingConnection((prev) => ({ ...prev, [id]: false }));
+      setIsSendingConnection((prev) => ({ ...prev, [userId]: false }));
     }
   };
 
-  const handleShortlist = async (id: string) => {
+  // Send like – expects receiverId (userId)
+  const handleShortlist = async (userId: string) => {
     try {
       const token = localStorage.getItem("authToken");
 
-      if (likedProfiles.has(id)) {
+      if (likedProfiles.has(userId)) {
         return;
       }
 
-      setIsSendingLike((prev) => ({ ...prev, [id]: true }));
+      setIsSendingLike((prev) => ({ ...prev, [userId]: true }));
 
-      const response = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/like/send", {
+      const response = await fetch("https://merimonial-backend.onrender.com/api/like/send", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ receiverId: id }),
+        body: JSON.stringify({ receiverId: userId }),
       });
 
       if (!response.ok) {
@@ -183,42 +182,48 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
         throw new Error(errorData.message || "Failed");
       }
 
-      setLikedProfiles(prev => new Set(prev).add(id));
-      toast.success("Profile liked!");
-      
-    } catch (error: any) {
-      if (error.message.includes("already liked")) {
-        setLikedProfiles(prev => new Set(prev).add(id));
-        // No toast for already liked, but you could show a subtle message
+      const result = await response.json();
+      if (result.success) {
+        setLikedProfiles((prev) => new Set(prev).add(userId));
+        toast.success("Profile liked!");
       } else {
-        toast.error("Failed to like profile.");
+        throw new Error(result.message || "Like failed");
+      }
+    } catch (error: any) {
+      if (error.message?.includes("already liked")) {
+        setLikedProfiles((prev) => new Set(prev).add(userId));
+      } else {
+        toast.error("Failed to like profile");
       }
     } finally {
-      setIsSendingLike((prev) => ({ ...prev, [id]: false }));
+      setIsSendingLike((prev) => ({ ...prev, [userId]: false }));
     }
   };
 
-  const handleNotNow = async (id: string) => {
+  // Skip profile – now uses /api/like/unlike with receiverId
+  const handleNotNow = async (userId: string) => {
     try {
       const token = localStorage.getItem("authToken");
 
-      const response = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/cross/user", {
+      const response = await fetch("https://merimonial-backend.onrender.com/api/like/unlike", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ userIdToBlock: id }),
+        body: JSON.stringify({ receiverId: userId }),
       });
 
       if (!response.ok) return;
 
-      setPermanentlySkipped(prev => new Set(prev).add(id));
-      toast.success("Profile skipped!");
-      removeProfile(id); // Remove immediately on skip
-      
-    } catch {
-      // Silently fail
+      const result = await response.json();
+      if (result.success) {
+        setPermanentlySkipped((prev) => new Set(prev).add(userId));
+        toast.success("Profile skipped!");
+        removeProfile(userId);
+      }
+    } catch (error) {
+      toast.error("Failed to skip profile");
     }
   };
 
@@ -237,7 +242,7 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
             currentMatches.map((profile) => {
               const isLiked = likedProfiles.has(profile.id);
               const isConnected = connectedProfiles.has(profile.id);
-              
+
               return (
                 <div
                   key={profile.id}
@@ -259,15 +264,21 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
                   {/* Info */}
                   <div className="flex-1 text-center md:text-left md:px-6 space-y-1">
                     <h3 className="text-lg font-semibold">{profile.name}</h3>
+                    {profile.quote && (
+                      <p className="text-sm text-gray-500 italic">"{profile.quote}"</p>
+                    )}
+                    {profile.partnerName && (
+                      <p className="text-sm text-gray-500">Partner: {profile.partnerName}</p>
+                    )}
 
                     <p className="text-sm text-gray-500 border-b pb-1">
-                      {profile.profileId} | Last seen {profile.lastSeen}
+                      ID: {profile.id.slice(-6)} | Last seen {profile.lastSeen}
                     </p>
 
+                    {/* Real data from API */}
                     <p className="text-sm text-gray-700">
                       {profile.age} Yrs · {profile.height} · {profile.caste}
                     </p>
-
                     <p className="text-sm text-gray-700">
                       {profile.profession} · Earns {profile.salary}
                     </p>
@@ -279,7 +290,6 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
                   {/* Actions */}
                   <div className="grid grid-cols-3 md:grid-cols-1 gap-4 items-center text-center md:text-left 
                   md:border-l md:pl-4">
-
                     {/* Connect */}
                     <div className="flex flex-col items-center md:flex-row gap-2">
                       <span className="text-sm">Connect</span>
@@ -287,7 +297,7 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
                         disabled={isSendingConnection[profile.id] || isConnected}
                         onClick={() => handleSendConnection(profile.id)}
                         className={`w-10 h-10 rounded-full bg-gradient-to-r from-green-400 to-blue-400 text-white hover:opacity-90 ${
-                          isConnected ? 'opacity-50 cursor-not-allowed' : ''
+                          isConnected ? "opacity-50 cursor-not-allowed" : ""
                         }`}
                       >
                         {isSendingConnection[profile.id] ? (
@@ -308,16 +318,17 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
                         disabled={isSendingLike[profile.id]}
                         onClick={() => handleShortlist(profile.id)}
                         className={`w-10 h-10 rounded-full ${
-                          isLiked 
-                            ? 'bg-red-500 hover:bg-red-600 text-white' 
-                            : 'hover:border-red-300'
+                          isLiked
+                            ? "bg-red-500 hover:bg-red-600 text-white"
+                            : "hover:border-red-300"
                         }`}
                       >
                         {isSendingLike[profile.id] ? (
                           <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
                         ) : (
-                          <Heart className={`w-4 h-4 ${isLiked ? 'text-white' : 'text-red-600'}`} 
-                            fill={isLiked ? "white" : "none"} 
+                          <Heart
+                            className={`w-4 h-4 ${isLiked ? "text-white" : "text-red-600"}`}
+                            fill={isLiked ? "white" : "none"}
                           />
                         )}
                       </Button>
@@ -334,7 +345,6 @@ export default function AllMatches({ activeTab }: AllMatchesProps) {
                         <X className="w-4 h-4 text-gray-600" />
                       </Button>
                     </div>
-
                   </div>
                 </div>
               );

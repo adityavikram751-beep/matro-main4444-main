@@ -51,7 +51,7 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
       setIsLoading(true);
 
       const response = await fetch(
-        "https://matrimonial-backend-7ahc.onrender.com/api/profile/newly-user",
+        "https://merimonial-backend.onrender.com/api/profile/newly-user",
         {
           method: "GET",
           headers: {
@@ -91,15 +91,6 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
     return new Date().getFullYear() - d.getFullYear();
   };
 
-  // REMOVE PROFILE (used for skip only)
-  const removeProfile = (id: string) => {
-    setNewlyMatched((prev) => prev.filter((u) => u._id !== id));
-    // Reset pagination if needed
-    if (newlyMatched.length <= 1) {
-      setCurrentPage(1);
-    }
-  };
-
   // ACTION: SEND CONNECTION
   const handleSendConnection = async (id: string) => {
     try {
@@ -112,7 +103,7 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
 
       const token = localStorage.getItem("authToken");
       const response = await fetch(
-        "https://matrimonial-backend-7ahc.onrender.com/api/request/send",
+        "https://merimonial-backend.onrender.com/api/request/send",
         {
           method: "POST",
           headers: {
@@ -128,13 +119,18 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
         throw new Error(errorData.message || "Failed to send connection");
       }
 
-      // Mark as connected, keep profile visible
+      // Mark as connected locally for immediate feedback
       setConnectedProfiles(prev => new Set(prev).add(id));
       toast.success("Connection request sent!");
+
+      // Refresh the list to reflect any backend changes
+      await fetchNewUsers();
       
     } catch (error: any) {
       if (error.message.includes("already sent")) {
         setConnectedProfiles(prev => new Set(prev).add(id));
+        toast.success("Connection request already sent!");
+        await fetchNewUsers(); // still refresh
       } else {
         toast.error(error.message || "Failed to send connection");
       }
@@ -154,7 +150,7 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
 
       const token = localStorage.getItem("authToken");
       const response = await fetch(
-        "https://matrimonial-backend-7ahc.onrender.com/api/like/send",
+        "https://merimonial-backend.onrender.com/api/like/send",
         {
           method: "POST",
           headers: {
@@ -172,12 +168,14 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
 
       setLikedProfiles(prev => new Set(prev).add(id));
       toast.success("Profile liked!");
-      // Do NOT remove profile – only heart turns red
+
+      // Refresh the list to reflect any backend changes
+      await fetchNewUsers();
       
     } catch (error: any) {
       if (error.message.includes("already liked")) {
         setLikedProfiles(prev => new Set(prev).add(id));
-        // No toast
+        await fetchNewUsers(); // still refresh
       } else {
         toast.error(error.message || "Failed to shortlist");
       }
@@ -186,20 +184,20 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
     }
   };
 
-  // ACTION: NOT NOW (SKIP PERMANENTLY)
+  // ACTION: NOT NOW (SKIP PERMANENTLY) – UPDATED TO /api/like/unlike
   const handleNotNow = async (id: string) => {
     try {
       const token = localStorage.getItem("authToken");
 
       const response = await fetch(
-        "https://matrimonial-backend-7ahc.onrender.com/api/cross/user",
+        "https://merimonial-backend.onrender.com/api/like/unlike",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ userIdToBlock: id }),
+          body: JSON.stringify({ receiverId: id }), // ✅ now using receiverId
         }
       );
 
@@ -208,16 +206,22 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
         throw new Error(errorData.message || "Failed to skip profile");
       }
 
-      setPermanentlySkipped(prev => new Set(prev).add(id));
-      toast.success("Profile skipped!");
-      removeProfile(id); // Remove immediately on skip
-      
+      const result = await response.json();
+      if (result.success) {
+        setPermanentlySkipped(prev => new Set(prev).add(id));
+        toast.success("Profile skipped!");
+
+        // Refresh the list – the skipped profile will be filtered out
+        await fetchNewUsers();
+      } else {
+        throw new Error(result.message || "Skip failed");
+      }
     } catch (error: any) {
       toast.error(error.message || "Failed to skip profile");
     }
   };
 
-  // REFRESH BUTTON
+  // REFRESH BUTTON (optional, kept for manual refresh)
   const handleRefresh = async () => {
     try {
       setIsRefreshing(true);
@@ -240,35 +244,12 @@ export default function NewlyMatched({ activeTab }: { activeTab: string }) {
 
   return (
     <div className="space-y-6 mt-0">
-      {/* REFRESH BUTTON */}
-      <div className="flex justify-end">
-        <Button
-          variant="outline"
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-          className="flex items-center gap-2"
-        >
-          {isRefreshing ? (
-            <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
-          ) : (
-            "Refresh"
-          )}
-        </Button>
-      </div>
-
       {/* LOADING */}
       {isLoading ? (
         <Loading message="Loading new profiles..." />
       ) : currentProfiles.length === 0 ? (
         <div className="text-center text-gray-600 py-8">
           <p>No new profiles found.</p>
-          <Button
-            variant="outline"
-            onClick={handleRefresh}
-            className="mt-4"
-          >
-            Refresh
-          </Button>
         </div>
       ) : (
         <>

@@ -121,7 +121,7 @@ export default function MultiStepForm({ onClose, onSuccess }: MultiStepFormProps
 
     try {
       const res = await fetch(
-        'https://matrimonial-backend-7ahc.onrender.com/auth/profile',
+        'https://merimonial-backend.onrender.com/auth/profile',
         {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },

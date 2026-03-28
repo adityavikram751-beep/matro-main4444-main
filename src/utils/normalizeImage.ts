@@ -8,7 +8,7 @@ export const normalizeImage = (img: any) => {
 
   // Case 2: Backend object with filename
   if (typeof img === "object" && img.filename) {
-    return `https://matrimonial-backend-7ahc.onrender.com/uploads/${img.filename}`;
+    return `https://merimonial-backend.onrender.com/uploads/${img.filename}`;
   }
 
   // Case 3: Backend object with url property
@@ -16,7 +16,7 @@ export const normalizeImage = (img: any) => {
     if (img.url.startsWith("http")) {
       return img.url;
     }
-    return `https://matrimonial-backend-7ahc.onrender.com${img.url}`;
+    return `https://merimonial-backend.onrender.com${img.url}`;
   }
 
   // Case 4: Blob preview (temporary)
@@ -26,7 +26,7 @@ export const normalizeImage = (img: any) => {
 
   // Case 5: Relative uploads path
   if (typeof img === "string" && img.startsWith("/uploads")) {
-    return `https://matrimonial-backend-7ahc.onrender.com${img}`;
+    return `https://merimonial-backend.onrender.com${img}`;
   }
 
   // Case 6: Already full URL
@@ -36,7 +36,7 @@ export const normalizeImage = (img: any) => {
 
   // Case 7: Just filename (no path)
   if (typeof img === "string" && !img.includes("/") && !img.startsWith("http")) {
-    return `https://matrimonial-backend-7ahc.onrender.com/uploads/${img}`;
+    return `https://merimonial-backend.onrender.com/uploads/${img}`;
   }
 
   // Default: return as is

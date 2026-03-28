@@ -31,7 +31,7 @@ export default function MatrimonialApp() {
         if (!token) throw new Error("No authentication token found");
 
         const response = await fetch(
-          "https://matrimonial-backend-7ahc.onrender.com/api/message/AllUser",
+          "https://merimonial-backend.onrender.com/api/match/all",
           {
             method: "GET",
             headers: {

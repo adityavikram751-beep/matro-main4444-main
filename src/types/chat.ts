@@ -62,6 +62,9 @@ export interface Message {
 // ===============================
 
 export interface SocketMessage {
+  to: string;
+  from: string;
+  timestamp: string | undefined;
   _id?: string;
   tempId?: string;
   senderId: string;

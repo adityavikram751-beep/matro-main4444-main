@@ -46,7 +46,7 @@ interface Profile {
   image: string
 }
 
-const API_BASE_URL = "https://matrimonial-backend-7ahc.onrender.com/api/like/iShortlist"
+const API_BASE_URL = "https://merimonial-backend.onrender.com/api/like/iShortlist"
 
 export default function IShortlisted() {
   const [profiles, setProfiles] = useState<Profile[]>([])
@@ -117,7 +117,7 @@ export default function IShortlisted() {
 
       setIsProcessing(prev => ({ ...prev, [id]: true }))
 
-      const res = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/request/send", {
+      const res = await fetch("https://merimonial-backend.onrender.com/api/request/send", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ receiverId: id }),
@@ -142,7 +142,7 @@ export default function IShortlisted() {
 
       setIsProcessing(prev => ({ ...prev, [id]: true }))
 
-      const res = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/cross/user", {
+      const res = await fetch("https://merimonial-backend.onrender.com/api/cross/user", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ userIdToBlock: id }),

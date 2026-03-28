@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import Image from "next/image";
 
 type Profile = {
-  _id: string;
+  _id: string;          // likely the user ID of the blocked profile
   name: string;
   age?: number;
   profileImage?: string;
@@ -17,7 +17,7 @@ export default function NotNowPage() {
 
   const fetchBlockedUsers = async () => {
     try {
-      const res = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/cross/user", {
+      const res = await fetch("https://merimonial-backend.onrender.com/api/like/cross-profile", {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -27,6 +27,7 @@ export default function NotNowPage() {
 
       const data = await res.json();
       if (data.success) {
+        console.log("Cross profiles data:", data.data); // debug to see structure
         setBlockedProfiles(data.data || []);
       } else {
         toast.error("Failed to load blocked users");
@@ -38,15 +39,16 @@ export default function NotNowPage() {
     }
   };
 
-  const handleUnblock = async (userId: string) => {
+  // ✅ Restore using /api/like/restore-unlike-profile (POST) with receiverId
+  const handleRestore = async (userId: string) => {
     try {
-      const res = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/cross/user", {
-        method: "DELETE",
+      const res = await fetch("https://merimonial-backend.onrender.com/api/like/restore-unlike-profile", {
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("authToken") || ""}`,
         },
-        body: JSON.stringify({ userIdToUnblock: userId }),
+        body: JSON.stringify({ receiverId: userId }),
       });
 
       const data = await res.json();
@@ -54,7 +56,7 @@ export default function NotNowPage() {
         toast.success("User restored");
         setBlockedProfiles((prev) => prev.filter((p) => p._id !== userId));
       } else {
-        toast.error("Failed to restore user");
+        toast.error(data.message || "Failed to restore user");
       }
     } catch {
       toast.error("Something went wrong");
@@ -65,7 +67,6 @@ export default function NotNowPage() {
     fetchBlockedUsers();
   }, []);
 
-  /* ---------------- LOADING UI ---------------- */
   if (loading) {
     return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-gradient-to-b from-rose-50 to-white px-4">
@@ -79,24 +80,10 @@ export default function NotNowPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10 sm:py-12">
-
-      {/* Page Title */}
-      <h1
-        className="
-          text-3xl sm:text-4xl 
-          font-extrabold 
-          mb-10 sm:mb-12 
-          text-center 
-          bg-gradient-to-r from-gray-900 to-gray-600 
-          bg-clip-text 
-          text-transparent 
-          drop-shadow-sm
-        "
-      >
+      <h1 className="text-3xl sm:text-4xl font-extrabold mb-10 sm:mb-12 text-center bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent drop-shadow-sm">
         Not-Now Profiles
       </h1>
 
-      {/* EMPTY STATE */}
       {blockedProfiles.length === 0 ? (
         <div className="flex flex-col items-center gap-4 mt-20">
           <Image
@@ -111,51 +98,13 @@ export default function NotNowPage() {
           </p>
         </div>
       ) : (
-        <div
-          className="
-            grid 
-            grid-cols-1 
-            sm:grid-cols-2 
-            lg:grid-cols-3 
-            gap-6 sm:gap-8
-          "
-        >
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
           {blockedProfiles.map((profile) => (
             <div
               key={profile._id}
-              className="
-                relative 
-                backdrop-blur-xl 
-                bg-white/50 
-                shadow-lg 
-                hover:shadow-2xl 
-                hover:-translate-y-1 
-                transition-all 
-                duration-300 
-                rounded-3xl 
-                p-5 sm:p-6 
-                flex flex-col 
-                items-center 
-                text-center 
-                border 
-                border-white/20 
-                group
-              "
+              className="relative backdrop-blur-xl bg-white/50 shadow-lg hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 rounded-3xl p-5 sm:p-6 flex flex-col items-center text-center border border-white/20 group"
             >
-              {/* Profile Image */}
-              <div
-                className="
-                  w-24 h-24 sm:w-28 sm:h-28 
-                  rounded-full 
-                  overflow-hidden 
-                  shadow-lg 
-                  ring-4 
-                  ring-rose-300 
-                  mb-4 
-                  group-hover:scale-105 
-                  transition-all
-                "
-              >
+              <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden shadow-lg ring-4 ring-rose-300 mb-4 group-hover:scale-105 transition-all">
                 {profile.profileImage ? (
                   <Image
                     src={profile.profileImage}
@@ -171,7 +120,6 @@ export default function NotNowPage() {
                 )}
               </div>
 
-              {/* Name + Age */}
               <h2 className="text-lg sm:text-xl font-bold text-gray-800">
                 {profile.name}
               </h2>
@@ -180,23 +128,9 @@ export default function NotNowPage() {
                 <p className="text-gray-500 text-sm mt-1">{profile.age} years old</p>
               )}
 
-              {/* Restore Button */}
               <button
-                onClick={() => handleUnblock(profile._id)}
-                className="
-                  mt-5 
-                  w-full 
-                  py-2.5 
-                  bg-gradient-to-r from-rose-600 to-red-500 
-                  text-white 
-                  font-semibold 
-                  rounded-full 
-                  hover:opacity-90 
-                  transition-all 
-                  relative 
-                  overflow-hidden
-                  text-sm sm:text-base
-                "
+                onClick={() => handleRestore(profile._id)}
+                className="mt-5 w-full py-2.5 bg-gradient-to-r from-rose-600 to-red-500 text-white font-semibold rounded-full hover:opacity-90 transition-all relative overflow-hidden text-sm sm:text-base"
               >
                 <span className="relative z-10">Restore</span>
                 <span className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-all bg-white"></span>

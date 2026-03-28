@@ -1,5 +1,5 @@
 export const API_BASE_URL = 'https://apimatri.qurilo.com/api/v1/'
-export const PROFILE_API_BASE_URL = 'https://matrimonial-backend-7ahc.onrender.com'
+export const PROFILE_API_BASE_URL = 'https://merimonial-backend.onrender.com'
 
 export const AUTH = {
   SEND_lOGIN_REGISTER_OTP: `${API_BASE_URL}auth/sendOtp`,

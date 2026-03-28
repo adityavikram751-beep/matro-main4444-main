@@ -17,12 +17,6 @@ import { toast } from "react-hot-toast";
 import { useRouter } from "next/navigation";
 import Loading from "../../../Loading";
 
-/**
- * Final ready-to-paste component
- *
- * NOTE: placeholderImage is the uploaded file path (will be transformed by your toolchain).
- * If you want to use a different placeholder, change placeholderImage.
- */
 const placeholderImage = "/mnt/data/28ce5a41-f9c4-482a-85e3-ac1f458668e3.png";
 
 type Status = "received" | "accepted" | "sent" | "rejected" | "deleted" | "pending";
@@ -30,6 +24,7 @@ type Status = "received" | "accepted" | "sent" | "rejected" | "deleted" | "pendi
 interface RawUser {
   _id?: string;
   id?: string;
+  userId?: string;
   name?: string;
   firstName?: string;
   lastName?: string;
@@ -95,21 +90,27 @@ export default function MatrimonialApp() {
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // API endpoints (as confirmed)
-  const apiReceived = "https://matrimonial-backend-7ahc.onrender.com/api/request/received";
-  const apiAccepted = "https://matrimonial-backend-7ahc.onrender.com/api/request/receivedData?status=accepted";
-  const apiSent = "https://matrimonial-backend-7ahc.onrender.com/api/request/getSendRequest";
-  const apiRejected = "https://matrimonial-backend-7ahc.onrender.com/api/request/receivedData?status=rejected";
-  const apiUpdateStatus = "https://matrimonial-backend-7ahc.onrender.com/api/request/update-status";
+  // API endpoints
+  const apiReceived = "https://merimonial-backend.onrender.com/api/request/received";
+  const apiAccepted = "https://merimonial-backend.onrender.com/api/request/accepted-by-me";
+  const apiSent = "https://merimonial-backend.onrender.com/api/request/getSendRequest";
+  const apiRejected = "https://merimonial-backend.onrender.com/api/request/rejected-by-me";
+  const apiUpdateStatus = "https://merimonial-backend.onrender.com/api/request/update-request-status";
 
   const safeToken = () => (typeof window !== "undefined" ? localStorage.getItem("authToken") : "");
 
+  // ==================== FIXED TRANSFORM FUNCTION ====================
   function transformToProfile(item: RequestRaw | RawUser | null, fallbackRequestId?: string): Profile | null {
     if (!item) return null;
+    
     const raw: any = (item as any).user ? (item as any).user : item;
     if (!raw) return null;
-    const id = raw._id || raw.id || "";
-    if (!id) return null;
+    
+    const id = raw._id || raw.id || raw.userId || "";
+    if (!id) {
+      console.warn("No ID found in raw object:", raw);
+      return null;
+    }
 
     const birthDate = raw.dateOfBirth ? new Date(raw.dateOfBirth) : null;
     const age = raw.age || (birthDate ? Math.floor((Date.now() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : 0);
@@ -152,103 +153,170 @@ export default function MatrimonialApp() {
       status,
       requestId: (item as any).requestId || fallbackRequestId || raw.requestId || undefined,
       acceptedBy: (item as any).acceptedBy || null,
-    } as Profile;
+    };
   }
 
-  /* -------------------- Fetchers -------------------- */
+  // ==================== HELPER TO EXTRACT REQUESTS ARRAY ====================
+  function extractRequests(json: any): any[] {
+    if (!json) return [];
+    if (Array.isArray(json)) return json;
+    if (json.data && Array.isArray(json.data)) return json.data;
+    if (json.requests && Array.isArray(json.requests)) return json.requests;
+    if (json.results && Array.isArray(json.results)) return json.results;
+    if (json.data && json.data.requests && Array.isArray(json.data.requests)) return json.data.requests;
+    console.warn("Unknown response structure:", json);
+    return [];
+  }
 
+  // ==================== FETCH FUNCTIONS ====================
   async function fetchReceived() {
-    setLoading(true);
     try {
       const token = safeToken();
+      if (!token) {
+        toast.error("No auth token found");
+        return;
+      }
+
       const res = await fetch(apiReceived, {
         method: "GET",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       });
-      const json = await res.json();
-      const arr: RequestRaw[] = json.requests || json.data || [];
-      const mapped = arr.map(i => transformToProfile(i)).filter((p): p is Profile => !!p);
+
+      const text = await res.text();
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch (e) {
+        console.error("Failed to parse JSON:", e);
+        toast.error("Invalid response from server");
+        return;
+      }
+
+      const requests = extractRequests(json);
+      const mapped = requests
+        .map((i: any) => transformToProfile(i))
+        .filter((p): p is Profile => !!p);
+      
       setReceivedProfiles(mapped);
     } catch (err) {
-      console.error("fetchReceived:", err);
+      console.error("fetchReceived error:", err);
       toast.error("Failed to load received");
-    } finally {
-      setLoading(false);
     }
   }
 
   async function fetchAccepted() {
-    setLoading(true);
     try {
       const token = safeToken();
+      if (!token) return;
+
       const res = await fetch(apiAccepted, {
         method: "GET",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       });
-      const json = await res.json();
-      const arr: RequestRaw[] = json.requests || json.data || [];
-      const mapped = arr.map(i => transformToProfile(i)).filter((p): p is Profile => !!p);
+
+      const text = await res.text();
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch (e) {
+        console.error("Failed to parse JSON:", e);
+        return;
+      }
+
+      const requests = extractRequests(json);
+      const mapped = requests
+        .map((i: any) => transformToProfile(i))
+        .filter((p): p is Profile => !!p);
+      
       setAcceptedProfiles(mapped);
     } catch (err) {
-      console.error("fetchAccepted:", err);
+      console.error("fetchAccepted error:", err);
       toast.error("Failed to load accepted");
-    } finally {
-      setLoading(false);
     }
   }
 
   async function fetchSent() {
-    setLoading(true);
     try {
       const token = safeToken();
+      if (!token) return;
+
       const res = await fetch(apiSent, {
         method: "GET",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       });
-      const json = await res.json();
-      const arr: RequestRaw[] = json.requests || json.data || [];
-      const mapped = arr.map(i => transformToProfile(i)).filter((p): p is Profile => !!p);
+
+      const text = await res.text();
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch (e) {
+        console.error("Failed to parse JSON:", e);
+        return;
+      }
+
+      const requests = extractRequests(json);
+      const mapped = requests
+        .map((i: any) => transformToProfile(i))
+        .filter((p): p is Profile => !!p);
+      
       setSentProfiles(mapped);
     } catch (err) {
-      console.error("fetchSent:", err);
+      console.error("fetchSent error:", err);
       toast.error("Failed to load sent");
-    } finally {
-      setLoading(false);
     }
   }
 
   async function fetchRejected() {
-    setLoading(true);
     try {
       const token = safeToken();
+      if (!token) return;
+
       const res = await fetch(apiRejected, {
         method: "GET",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       });
-      const json = await res.json();
-      const arr: RequestRaw[] = json.requests || json.data || [];
-      const mapped = arr.map(i => transformToProfile(i)).filter((p): p is Profile => !!p);
+
+      const text = await res.text();
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch (e) {
+        console.error("Failed to parse JSON:", e);
+        return;
+      }
+
+      const requests = extractRequests(json);
+      const mapped = requests
+        .map((i: any) => transformToProfile(i))
+        .filter((p): p is Profile => !!p);
+      
       setRejectedProfiles(mapped);
     } catch (err) {
-      console.error("fetchRejected:", err);
+      console.error("fetchRejected error:", err);
       toast.error("Failed to load rejected");
-    } finally {
-      setLoading(false);
     }
   }
 
+  // ==================== LOAD ALL DATA ====================
   useEffect(() => {
     const token = safeToken();
-    if (!token) return;
+    if (!token) {
+      toast.error("Please login first");
+      return;
+    }
+    
     setLoading(true);
-    Promise.all([fetchReceived(), fetchAccepted(), fetchSent(), fetchRejected()])
+    Promise.all([
+      fetchReceived(),
+      fetchAccepted(), 
+      fetchSent(), 
+      fetchRejected()
+    ])
       .catch(e => console.error(e))
       .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
-  /* -------------------- Actions (Received tab uses update-status) -------------------- */
-
+  // ==================== ACTIONS ====================
   async function handleUpdateStatus(profile: Profile, newStatus: "accepted" | "rejected") {
     if (!profile.requestId) {
       toast.error("Request ID missing");
@@ -279,7 +347,6 @@ export default function MatrimonialApp() {
       if (res.ok && json.success) {
         toast.success(newStatus === "accepted" ? "Accepted" : "Rejected");
 
-        // Local sync updates
         setReceivedProfiles(prev => prev.filter(p => p.id !== profile.id));
 
         if (newStatus === "accepted") {
@@ -303,30 +370,6 @@ export default function MatrimonialApp() {
     }
   }
 
-
-  async function handleSendConnection(profile: Profile) {
-    try {
-      const token = safeToken();
-      const res = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/request/send", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ receiverId: profile.id }),
-      });
-      const json = await res.json();
-      if (res.ok && json.success) {
-        toast.success("Connection sent");
-        // Move locally to sentProfiles or mark status
-        setSentProfiles(prev => [{ ...profile, status: "sent" }, ...prev]);
-        setReceivedProfiles(prev => prev.filter(p => p.id !== profile.id));
-      } else {
-        toast.error(json.message || "Failed to send connection");
-      }
-    } catch (err) {
-      console.error("send error", err);
-      toast.error("Error sending connection");
-    }
-  }
-
   async function handleDelete(profile: Profile) {
     if (!profile.requestId) {
       toast.error("Request ID missing");
@@ -334,7 +377,7 @@ export default function MatrimonialApp() {
     }
     try {
       const token = safeToken();
-      const res = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/request/delete", {
+      const res = await fetch("https://merimonial-backend.onrender.com/api/request/delete-send-request", {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ requestId: profile.requestId }),
@@ -360,7 +403,7 @@ export default function MatrimonialApp() {
     }
     try {
       const token = safeToken();
-      const res = await fetch("https://matrimonial-backend-7ahc.onrender.com/api/request/restore", {
+      const res = await fetch("https://merimonial-backend.onrender.com/api/request/restore", {
         method: "PATCH",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ requestId: profile.requestId }),
@@ -368,10 +411,9 @@ export default function MatrimonialApp() {
       const json = await res.json();
       if (res.ok && json.success) {
         toast.success("Restored");
-        // move to sent
         setDeletedProfiles(prev => prev.filter(p => p.id !== profile.id));
         setRejectedProfiles(prev => prev.filter(p => p.id !== profile.id));
-        setSentProfiles(prev => [{ ...profile, status: "sent", requestId: json.requestId || profile.requestId }, ...sentProfiles]);
+        setSentProfiles(prev => [{ ...profile, status: "sent", requestId: json.requestId || profile.requestId }, ...prev]);
       } else {
         toast.error(json.message || "Failed to restore");
       }
@@ -381,15 +423,21 @@ export default function MatrimonialApp() {
     }
   }
 
+  // ✅ FIXED CHAT FUNCTION
   function handleChat(profile: Profile) {
     if (typeof window === "undefined") return;
+
+    // Log to debug
+    console.log("Opening chat for profile:", profile);
+    
+    // Store profile in localStorage for the chat page to use
     localStorage.setItem("chatUser", JSON.stringify(profile));
-    const baseUrl = window.location.origin;
-    router.push(`${baseUrl}/messages?userId=${profile.id}&name=${encodeURIComponent(profile.name)}`);
+    
+    // Use relative path - Next.js router handles base URL
+    router.push(`/messages?userId=${profile.id}&name=${encodeURIComponent(profile.name)}`);
   }
 
-  /* -------------------- UI helpers -------------------- */
-
+  // ==================== UI HELPERS ====================
   const tabs = [
     { name: "Received", count: receivedProfiles.filter(p => p.status === "received" || p.status === "pending").length },
     { name: "Accepted", count: acceptedProfiles.length },
@@ -405,12 +453,10 @@ export default function MatrimonialApp() {
     return [];
   }, [activeTab, receivedProfiles, acceptedProfiles, sentProfiles, rejectedProfiles]);
 
-  /* -------------------- PROFILE CARD (RESPONSIVE) -------------------- */
-
+  // ==================== PROFILE CARD COMPONENT ====================
   function ProfileCard({ profile }: { profile: Profile }) {
     return (
       <Card className="p-4 sm:p-6 bg-white rounded-lg border border-[#7D0A0A] w-full">
-
         <div className="flex flex-col sm:flex-row sm:items-start sm:space-x-6 space-y-4 sm:space-y-0">
 
           {/* IMAGE */}
@@ -430,7 +476,6 @@ export default function MatrimonialApp() {
 
           {/* MIDDLE CONTENT */}
           <div className="flex-1 min-w-0">
-
             <div className="flex items-start justify-between">
               <div className="border-b border-[#757575] w-full pb-1">
                 <h3 className="text-lg font-semibold font-Lato text-[#1E1E1E] mb-1 break-words">
@@ -453,17 +498,10 @@ export default function MatrimonialApp() {
             </div>
           </div>
 
-          {/* ACTIONS RIGHT SIDE — MAKING RESPONSIVE */}
-          <div className="
-            flex flex-col space-y-3 items-center 
-            border-t sm:border-t-0 sm:border-l border-[#757575]
-            w-full sm:w-[220px] pt-4 sm:pt-0 sm:px-4
-          ">
-
-            {/* RECEIVED TAB */}
+          {/* ACTIONS */}
+          <div className="flex flex-col space-y-3 items-center border-t sm:border-t-0 sm:border-l border-[#757575] w-full sm:w-[220px] pt-4 sm:pt-0 sm:px-4">
             {activeTab === "Received" && (
               <>
-                {/* Accept */}
                 <div className="flex items-center justify-between w-full sm:justify-start sm:gap-4">
                   <span className="text-sm font-Lato text-[#000000]">Accept</span>
                   <Button
@@ -476,7 +514,6 @@ export default function MatrimonialApp() {
                   </Button>
                 </div>
 
-                {/* Reject */}
                 <div className="flex items-center justify-between w-full sm:justify-start sm:gap-4">
                   <span className="text-sm font-Lato text-[#000000]">Reject</span>
                   <Button
@@ -490,107 +527,54 @@ export default function MatrimonialApp() {
                 </div>
               </>
             )}
-{/* ACCEPTED TAB */}
-{activeTab === "Accepted" && (
-  <div className="w-full flex flex-col gap-3">
 
-  
-    {/* CHAT BUTTON */}
-    <button
-      onClick={() => handleChat(profile)}
-      className="
-        group w-full h-11
-        flex items-center justify-between
-        px-4 rounded-full
-        border-2 border-[#8E2E37]
-        transition
-        hover:bg-[#8E2E37]
-      "
-    >
-      <span className="text-sm font-Lato text-black group-hover:text-white">
-        Chat
-      </span>
+            {activeTab === "Accepted" && (
+              <div className="w-full flex flex-col gap-3">
+                <button
+                  onClick={() => handleChat(profile)}
+                  className="group w-full h-11 flex items-center justify-between px-4 rounded-full border-2 border-[#8E2E37] transition hover:bg-[#8E2E37]"
+                >
+                  <span className="text-sm font-Lato text-black group-hover:text-white">Chat</span>
+                  <MessageCircleMore className="w-5 h-5 text-black group-hover:text-white" />
+                </button>
 
-      <MessageCircleMore className="w-5 h-5 text-black group-hover:text-white" />
-    </button>
+                <button
+                  onClick={() => handleUpdateStatus(profile, 'rejected')}
+                  className="group w-full h-11 flex items-center justify-between px-4 rounded-full border-2 border-[#8E2E37] transition hover:bg-[#8E2E37]"
+                >
+                  <span className="text-sm font-Lato text-black group-hover:text-white">Reject</span>
+                  <X className="w-5 h-5 text-black group-hover:text-white" />
+                </button>
+              </div>
+            )}
 
-    {/* REJECT BUTTON */}
-    <button
-      onClick={() => handleUpdateStatus(profile, 'rejected')}
-      className="
-        group w-full h-11
-        flex items-center justify-between
-        px-4 rounded-full
-        border-2 border-[#8E2E37]
-        transition
-        hover:bg-[#8E2E37]
-      "
-    >
-      <span className="text-sm font-Lato text-black group-hover:text-white">
-        Reject
-      </span>
+            {activeTab === "Sent" && (
+              <div className="w-full flex flex-col gap-3">
+                <div className="w-full h-11 flex items-center justify-between px-4 rounded-full border-2 border-[#8E2E37] opacity-70 cursor-not-allowed">
+                  <span className="text-sm font-Lato text-black">Pending</span>
+                  <ClockFading className="w-5 h-5 text-black" />
+                </div>
 
-      <X className="w-5 h-5 text-black group-hover:text-white" />
-    </button>
+                <button
+                  onClick={() => handleDelete(profile)}
+                  className="group w-full h-11 flex items-center justify-between px-4 rounded-full border-2 border-[#8E2E37] transition hover:bg-[#8E2E37]"
+                >
+                  <span className="text-sm font-Lato text-black group-hover:text-white">Delete</span>
+                  <Trash className="w-5 h-5 text-black group-hover:text-white" />
+                </button>
+              </div>
+            )}
 
-  </div>
-)}
-
-{/* SENT TAB */}
-{activeTab === "Sent" && (
-  <div className="w-full flex flex-col gap-3">
-
-  
-    {/* PENDING (DISABLED STATE) */}
-    <div
-      className="
-        w-full h-11
-        flex items-center justify-between
-        px-4 rounded-full
-        border-2 border-[#8E2E37]
-        opacity-70 cursor-not-allowed
-      "
-    >
-      <span className="text-sm font-Lato text-black">
-        Pending
-      </span>
-      <ClockFading className="w-5 h-5 text-black" />
-    </div>
-
-    {/* DELETE */}
-    <button
-      onClick={() => handleDelete(profile)}
-      className="
-        group w-full h-11
-        flex items-center justify-between
-        px-4 rounded-full
-        border-2 border-[#8E2E37]
-        transition
-        hover:bg-[#8E2E37]
-      "
-    >
-      <span className="text-sm font-Lato text-black group-hover:text-white">
-        Delete
-      </span>
-
-      <Trash className="w-5 h-5 text-black group-hover:text-white" />
-    </button>
-
-  </div>
-)}
-
-
-            {/* REJECTED TAB */}
             {activeTab === "Rejected" && (
               <div className="flex flex-col items-center space-y-2 w-full">
                 <div className="text-gray-600 font-Lato text-sm">Profile Rejected</div>
-                {/* <Button
+                <Button
                   size="sm"
                   className="bg-red-500 hover:bg-red-600 text-white rounded-full px-4 py-2"
                   onClick={() => handleRestore(profile)}
                 >
                   Restore
-                </Button> */}
+                </Button>
               </div>
             )}
 
@@ -602,19 +586,13 @@ export default function MatrimonialApp() {
     );
   }
 
-  /* ---------------------------------------------------------
-     🔥 COMPONENT FINAL RETURN (FULLY RESPONSIVE VERSION)
-  --------------------------------------------------------- */
-
+  // ==================== MAIN RENDER ====================
   return (
     <div className="min-h-screen bg-gray-50">
-
-      {/* 🔥 FIXED TABS NAVBAR — RESPONSIVE UPDATED */}
+      {/* TABS */}
       <div className="bg-white border-b sticky top-[62px] z-40">
         <div className="max-w-4xl mx-auto px-2 sm:px-4">
-
           <div className="flex gap-6 sm:gap-10 overflow-x-auto no-scrollbar items-center justify-start sm:justify-evenly py-2">
-
             {tabs.map((tab) => (
               <button
                 key={tab.name}
@@ -631,45 +609,29 @@ export default function MatrimonialApp() {
                 {typeof tab.count === "number" ? ` (${tab.count})` : ""}
               </button>
             ))}
-
           </div>
-
         </div>
       </div>
 
-      {/* SPACING */}
       <div className="h-2"></div>
 
-      {/* SMALL SPACING CONDITION — KEEP AS IS */}
-      {activeTab === "Accepted" && (
-        <div className="flex gap-3 items-center justify-center mt-4 sm:mt-8"></div>
-      )}
-
-      {/* MAIN LIST CONTAINER */}
+      {/* MAIN CONTENT */}
       <div className="max-w-4xl mx-auto px-2 sm:px-4 py-4 sm:py-6 space-y-4">
-
         {loading ? (
           <Loading message="Loading profiles..." />
-
         ) : currentList.length === 0 ? (
-
           <div className="text-center py-10 bg-white rounded-xl shadow-sm border border-gray-200">
             <div className="text-gray-600 text-lg">No profiles found</div>
           </div>
-
         ) : (
-
           currentList.map((p, idx) => (
             <ProfileCard
               key={`${p.id}-${p.requestId || "noReq"}-${idx}`}
               profile={p}
             />
           ))
-
         )}
-
       </div>
-
     </div>
   );
 }

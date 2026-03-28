@@ -50,7 +50,7 @@ export default function ProfileVisitor() {
       if (!token) throw new Error("No authentication token found.");
 
       const res = await fetch(
-        "https://matrimonial-backend-7ahc.onrender.com/api/profile/view/viewed-me",
+        "https://merimonial-backend.onrender.com/api/profile/view/viewed-me",
         {
           method: "GET",
           headers: {

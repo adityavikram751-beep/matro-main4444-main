@@ -37,44 +37,60 @@ export default function Navbar() {
   const [isMultiStepOpen, setIsMultiStepOpen] = useState(false);
   const [profileComplete, setProfileComplete] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [displayImage, setDisplayImage] = useState<string>(DEFAULT_PROFILE_IMAGE);
-  const [isMobileProfileOpen, setIsMobileProfileOpen] = useState(false); // New state for mobile profile
+  const [isMobileProfileOpen, setIsMobileProfileOpen] = useState(false);
+  
+  // Local state for image URL - directly from localStorage
+  const [localImageUrl, setLocalImageUrl] = useState(DEFAULT_PROFILE_IMAGE);
+  const [imageError, setImageError] = useState(false);
 
-  useEffect(() => {
-    const normalized = normalizeImage(profileImage);
-    if (normalized && normalized !== DEFAULT_PROFILE_IMAGE) {
-      console.log('Navbar: Setting display image:', normalized);
-      setDisplayImage(normalized);
+  // Function to update local image from storage
+  const updateLocalImage = () => {
+    const storedImage = localStorage.getItem('profileImage');
+    if (storedImage && storedImage !== DEFAULT_PROFILE_IMAGE) {
+      console.log('Navbar: Loading from localStorage:', storedImage);
+      setLocalImageUrl(storedImage);
+      setImageError(false);
     } else {
-      const storedImage = localStorage.getItem('profileImage');
-      if (storedImage && storedImage !== DEFAULT_PROFILE_IMAGE) {
-        const normalizedStored = normalizeImage(storedImage);
-        console.log('Navbar: Using stored image:', normalizedStored);
-        setDisplayImage(normalizedStored || DEFAULT_PROFILE_IMAGE);
-      } else {
-        setDisplayImage(DEFAULT_PROFILE_IMAGE);
-      }
+      setLocalImageUrl(DEFAULT_PROFILE_IMAGE);
     }
-  }, [profileImage]);
+  };
 
+  // Listen for storage changes (from other tabs/windows)
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'profileImage') {
+        console.log('Navbar: Storage changed:', e.newValue);
+        if (e.newValue) {
+          setLocalImageUrl(e.newValue);
+          setImageError(false);
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+  // Listen for custom event
   useEffect(() => {
     const handleProfileImageUpdate = (e: Event) => {
       const customEvent = e as CustomEvent;
       const newImage = customEvent.detail?.profileImage;
       if (newImage) {
-        console.log('Navbar: Received image update event:', newImage);
-        setProfileImage(newImage);
-        setDisplayImage(newImage);
+        console.log('Navbar: Received custom event:', newImage);
+        localStorage.setItem('profileImage', newImage);
+        setLocalImageUrl(newImage);
+        setImageError(false);
       }
     };
 
     window.addEventListener('profileImageUpdated', handleProfileImageUpdate);
-
     return () => {
       window.removeEventListener('profileImageUpdated', handleProfileImageUpdate);
     };
-  }, [setProfileImage]);
+  }, []);
 
+  // Fetch user data
   const fetchUser = async () => {
     try {
       const token = localStorage.getItem('authToken');
@@ -82,7 +98,7 @@ export default function Navbar() {
 
       console.log('Navbar: Fetching user profile...');
 
-      const res = await fetch('https://matrimonial-backend-7ahc.onrender.com/api/profile/self', {
+      const res = await fetch('https://merimonial-backend.onrender.com/api/profile/self', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -96,50 +112,88 @@ export default function Navbar() {
       }
 
       const data = await res.json();
-      console.log('Navbar: Received user data:', data);
+      console.log('Navbar: API Response:', data);
       
       const user = data.data || data.user || data;
 
-      let normalizedImage = DEFAULT_PROFILE_IMAGE;
-      
-      console.log('Navbar: Raw profileImage from API:', user.profileImage);
+      let imageUrl = DEFAULT_PROFILE_IMAGE;
       
       if (user.profileImage) {
+        console.log('Navbar: Raw image from API:', user.profileImage);
+        
+        // Try to normalize
         const normalized = normalizeImage(user.profileImage);
         console.log('Navbar: Normalized image:', normalized);
         
         if (normalized && normalized !== DEFAULT_PROFILE_IMAGE) {
-          normalizedImage = normalized;
+          imageUrl = normalized;
+        } else if (typeof user.profileImage === 'string' && 
+                   (user.profileImage.startsWith('http') || user.profileImage.startsWith('/'))) {
+          imageUrl = user.profileImage;
         }
       }
 
-      // Update all storage locations
-      console.log('Navbar: Setting profile image to:', normalizedImage);
-      setProfileImage(normalizedImage);
-      setDisplayImage(normalizedImage);
-      localStorage.setItem("profileImage", normalizedImage);
+      console.log('Navbar: Final image URL:', imageUrl);
 
+      // Save to all places
+      localStorage.setItem('profileImage', imageUrl);
+      setLocalImageUrl(imageUrl);
+      setProfileImage(imageUrl);
+      setImageError(false);
+
+      // Update name
+      const firstName = user.firstName || user.basicInfo?.firstName || user.user?.firstName || '';
+      setUserFirstName(firstName);
+
+      // Profile completion
+      const isComplete = data.isProfileComplete === true;
+      setProfileComplete(isComplete);
+
+      // Store user data
       const dataToStore = {
         ...user,
-        isProfileComplete: data.isProfileComplete,
-        profileImage: normalizedImage
+        isProfileComplete: isComplete,
+        profileImage: imageUrl
       };
-
       localStorage.setItem('userData', JSON.stringify(dataToStore));
-      setProfileComplete(data.isProfileComplete === true);
 
-      console.log('Navbar: Profile data updated successfully');
+      console.log('Navbar: Update complete');
     } catch (error) {
       console.error('Error fetching user:', error);
     }
   };
 
+  // Initial load
+  useEffect(() => {
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      setIsAuthenticated(true);
+      
+      // Load from localStorage first
+      updateLocalImage();
+      
+      // Load user data from localStorage
+      const userData = localStorage.getItem('userData');
+      if (userData) {
+        try {
+          const parsed = JSON.parse(userData);
+          const firstName = parsed.firstName || parsed.basicInfo?.firstName || '';
+          setUserFirstName(firstName);
+          setProfileComplete(parsed.isProfileComplete === true);
+        } catch (e) {
+          console.error('Error parsing userData:', e);
+        }
+      }
+
+      // Fetch fresh data
+      fetchUser();
+    }
+  }, []);
+
+  // Click outside handler
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (
-        isProfileOpen &&
-        !(e.target as HTMLElement).closest(".profile-dropdown")
-      ) {
+      if (isProfileOpen && !(e.target as HTMLElement).closest(".profile-dropdown")) {
         setIsProfileOpen(false);
       }
     };
@@ -148,115 +202,25 @@ export default function Navbar() {
     return () => document.removeEventListener("click", handleClickOutside);
   }, [isProfileOpen]);
 
-  useEffect(() => {
-    const userData = localStorage.getItem('userData');
-    if (userData) {
-      try {
-        const parsed = JSON.parse(userData);
-        const isComplete = parsed.isProfileComplete === true || parsed.isProfileComplete === 'true';
-        setProfileComplete(isComplete);
-      } catch (e) {
-        console.error('Error parsing userData:', e);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    const token = localStorage.getItem('authToken');
-
-    if (token) {
-      setIsAuthenticated(true);
-
-      const userData = localStorage.getItem('userData');
-      if (userData) {
-        try {
-          const parsedData = JSON.parse(userData);
-
-          const firstName =
-            parsedData.basicInfo?.firstName ||
-            parsedData.firstName ||
-            parsedData.user?.firstName ||
-            '';
-          setUserFirstName(firstName);
-
-          const storedImage =
-            parsedData.profileImage ||
-            parsedData.basicInfo?.profileImage ||
-            parsedData.user?.profileImage;
-
-          console.log('Navbar init: Found stored image:', storedImage);
-
-          if (storedImage) {
-            const normalized = normalizeImage(storedImage);
-            console.log('Navbar init: Normalized to:', normalized);
-            if (normalized && normalized !== DEFAULT_PROFILE_IMAGE) {
-              setProfileImage(normalized);
-              setDisplayImage(normalized);
-            } else {
-              setProfileImage(DEFAULT_PROFILE_IMAGE);
-              setDisplayImage(DEFAULT_PROFILE_IMAGE);
-            }
-          } else {
-            setProfileImage(DEFAULT_PROFILE_IMAGE);
-            setDisplayImage(DEFAULT_PROFILE_IMAGE);
-          }
-        } catch (error) {
-          console.error('Error parsing user data:', error);
-        }
-      }
-
-      fetchUser();
-    }
-  }, [setProfileImage]);
-
   const handleLoginSuccess = async (token: string, userId: string) => {
     localStorage.setItem('authToken', token);
-    try {
-      const response = await fetch(`${PROFILE.GET_USER_DATA}/${userId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
-        const userData = await response.json();
-        
-        let normalizedImage = DEFAULT_PROFILE_IMAGE;
-        if (userData.profileImage) {
-          normalizedImage = normalizeImage(userData.profileImage) || DEFAULT_PROFILE_IMAGE;
-        }
-
-        const dataToStore = {
-          ...userData,
-          profileImage: normalizedImage
-        };
-
-        localStorage.setItem('userData', JSON.stringify(dataToStore));
-        setProfileImage(normalizedImage);
-
-        const firstName =
-          userData.firstName ||
-          userData.basicInfo?.firstName ||
-          userData.user?.firstName ||
-          '';
-
-        setUserFirstName(firstName);
-
-        if (userData.profileComplete === false) {
-          setTimeout(() => {
-            setIsProfileSetupOpen(true);
-          }, 3000);
-        }
-      } else {
-        console.error('Failed to fetch user data:', await response.text());
-      }
-    } catch (error) {
-      console.error('Error fetching user data:', error);
-    }
     setIsAuthenticated(true);
     setIsLoginOpen(false);
     setCurrentLevel(1);
+    
+    // Fetch immediately
+    await fetchUser();
+
+    // Check for profile completion
+    const userData = localStorage.getItem('userData');
+    if (userData) {
+      const parsed = JSON.parse(userData);
+      if (parsed.isProfileComplete === false) {
+        setTimeout(() => {
+          setIsProfileSetupOpen(true);
+        }, 3000);
+      }
+    }
   };
 
   const handleLogout = () => {
@@ -268,24 +232,27 @@ export default function Navbar() {
     setUserFirstName('');
     setIsProfileSetupOpen(false);
     setProfileStep(1);
+    setLocalImageUrl(DEFAULT_PROFILE_IMAGE);
     setProfileImage(DEFAULT_PROFILE_IMAGE);
-    setDisplayImage(DEFAULT_PROFILE_IMAGE);
+    setImageError(false);
     setMobileOpen(false);
     setIsMobileProfileOpen(false);
     router.push('/');
   };
 
   const handleProfileUpdateSuccess = (profileData: any) => {
-    const normalizedImage = normalizeImage(profileData.profileImage) || DEFAULT_PROFILE_IMAGE;
+    const imageUrl = profileData.profileImage || DEFAULT_PROFILE_IMAGE;
     const updatedUserData = { 
       ...profileData.user, 
       isProfileComplete: profileData.isProfileComplete,
-      profileImage: normalizedImage
+      profileImage: imageUrl
     };
     localStorage.setItem('userData', JSON.stringify(updatedUserData));
-    localStorage.setItem('profileImage', normalizedImage);
+    localStorage.setItem('profileImage', imageUrl);
+    setLocalImageUrl(imageUrl);
+    setProfileImage(imageUrl);
     setProfileComplete(profileData.isProfileComplete);
-    setProfileImage(normalizedImage);
+    setImageError(false);
   };
 
   const openLoginModal = () => {
@@ -316,6 +283,21 @@ export default function Navbar() {
     setIsMultiStepOpen(true);
     setMobileOpen(false);
     setIsMobileProfileOpen(false);
+  };
+
+  const handleImageError = () => {
+    console.error('Navbar: Image failed to load:', localImageUrl);
+    setImageError(true);
+    setLocalImageUrl(DEFAULT_PROFILE_IMAGE);
+  };
+
+  // Force update URL with timestamp for cache busting
+  const getImageSrc = () => {
+    if (imageError || !localImageUrl || localImageUrl === DEFAULT_PROFILE_IMAGE) {
+      return DEFAULT_PROFILE_IMAGE;
+    }
+    // Add timestamp to force reload
+    return `${localImageUrl}${localImageUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
   };
 
   return (
@@ -358,19 +340,13 @@ export default function Navbar() {
                 className="flex items-center space-x-2 focus:outline-none"
               >
                 <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
-                  {displayImage && displayImage !== DEFAULT_PROFILE_IMAGE ? (
+                  {!imageError && localImageUrl && localImageUrl !== DEFAULT_PROFILE_IMAGE ? (
                     <img
-                      key={displayImage}
-                      src={displayImage}
-                      alt="Profile"
+                      src={getImageSrc()}
+                      alt={userFirstName || 'Profile'}
                       className="w-full h-full object-cover"
-                      onError={(e) => {
-                        console.error('Navbar: Image load failed for:', displayImage);
-                        e.currentTarget.src = DEFAULT_PROFILE_IMAGE;
-                      }}
-                      onLoad={() => {
-                        console.log('Navbar: Image loaded successfully:', displayImage);
-                      }}
+                      onError={handleImageError}
+                      onLoad={() => console.log('✅ Image loaded:', localImageUrl)}
                     />
                   ) : (
                     <FaUserCircle className="text-3xl text-gray-600" />
@@ -460,7 +436,6 @@ export default function Navbar() {
 
       {mobileOpen && (
         <div className="md:hidden bg-white shadow px-4 pb-4 animate-fade-in-down">
-          {/* Mobile Navigation Links */}
           {isAuthenticated && (
             <ul className="flex flex-col space-y-3 mt-2 mb-4">
               {navLinks.map((link) => (
@@ -477,23 +452,19 @@ export default function Navbar() {
             </ul>
           )}
 
-          {/* Mobile Profile Section */}
           {isAuthenticated ? (
             <div className="border-t border-gray-200 pt-4 mt-4">
-              {/* Profile Header */}
               <div 
                 className="flex items-center space-x-3 p-3 rounded-lg bg-gray-50 cursor-pointer hover:bg-gray-100"
                 onClick={() => setIsMobileProfileOpen(!isMobileProfileOpen)}
               >
                 <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
-                  {displayImage && displayImage !== DEFAULT_PROFILE_IMAGE ? (
+                  {!imageError && localImageUrl && localImageUrl !== DEFAULT_PROFILE_IMAGE ? (
                     <img
-                      src={displayImage}
-                      alt="Profile"
+                      src={getImageSrc()}
+                      alt={userFirstName || 'Profile'}
                       className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.currentTarget.src = DEFAULT_PROFILE_IMAGE;
-                      }}
+                      onError={handleImageError}
                     />
                   ) : (
                     <FaUserCircle className="text-3xl text-gray-600" />
@@ -508,7 +479,6 @@ export default function Navbar() {
                 />
               </div>
 
-              {/* Mobile Profile Dropdown */}
               {isMobileProfileOpen && (
                 <div className="mt-2 ml-4 border-l-2 border-gray-200 pl-4 space-y-2">
                   <Link href="/profiles">
@@ -560,7 +530,6 @@ export default function Navbar() {
                 </div>
               )}
 
-              {/* Logout Button (Always Visible) */}
               <button
                 className="mt-4 w-full bg-red-500 text-white px-5 py-3 rounded font-semibold hover:bg-red-600 transition-colors duration-200"
                 onClick={handleLogout}
@@ -636,24 +605,6 @@ export default function Navbar() {
         </div>
       )}
 
-      {isProfileSetupOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-opacity-40">
-          <div className="relative rounded-lg shadow-xl w-full max-w-md mx-auto p-6 animate-fade-in custom-scrollbar bg-white px-4 py-4 min-w-[450px] max-h-[90vh] overflow-y-auto">
-            <button
-              className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
-              onClick={() => setIsProfileSetupOpen(false)}
-            >
-              ✕
-            </button>
-
-            {errorMessage && (
-              <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
-                {errorMessage}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </header>
   );
 }

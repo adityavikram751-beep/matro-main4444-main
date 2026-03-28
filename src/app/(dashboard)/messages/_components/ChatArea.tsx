@@ -1,3 +1,4 @@
+// components/ChatArea.tsx
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -6,6 +7,8 @@ import Image from "next/image";
 import MessageInput from "./MessageInput";
 import { Eye, Download, FileText, MoreVertical, Flag, X } from "lucide-react";
 import { Conversation, Message, MessageFile, SocketMessage } from "@/types/chat";
+
+const API_BASE_URL = "https://merimonial-backend.onrender.com"; // or use config
 
 interface User {
   _id: string;
@@ -20,8 +23,8 @@ interface ChatAreaProps {
   socket: Socket;
   onOpenSidebar: () => void;
   onMessageSent: (conversationId: string, text: string) => void;
-  messages: Message[];
-  setMessages: (msgs: Message[]) => void;
+  messages: Message[];           // from parent
+  setMessages: (msgs: Message[] | ((prev: Message[]) => Message[])) => void; // from parent
 }
 
 function mapSocketToMessage(
@@ -53,8 +56,9 @@ export default function ChatArea({
   socket,
   onOpenSidebar,
   onMessageSent,
+  messages,
+  setMessages,
 }: ChatAreaProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [replyingMessage, setReplyingMessage] = useState<Message | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
@@ -86,14 +90,14 @@ export default function ChatArea({
 
   const handleScroll = () => setShouldAutoScroll(isAtBottom());
 
+  // Socket listeners
   useEffect(() => {
     if (!socket || !currentUser || !conversation) return;
 
     const handleSentMessage = (msg: SocketMessage) => {
-
       if (msg.receiverId !== conversation.id) return;
 
-      setMessages((prev) => {
+      setMessages((prev: Message[]) => {
         if (msg.tempId) {
           const tempIndex = prev.findIndex((m) => m.id === msg.tempId);
           if (tempIndex !== -1) {
@@ -131,20 +135,13 @@ export default function ChatArea({
     };
 
     const handleIncomingMessage = (msg: SocketMessage) => {
-
-      if (msg.senderId === currentUser._id) {
-        return;
-      }
+      if (msg.senderId === currentUser._id) return;
 
       const isRelevant = msg.senderId === conversation.id && msg.receiverId === currentUser._id;
-      if (!isRelevant) {
-        return;
-      }
+      if (!isRelevant) return;
 
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === msg._id)) {
-          return prev;
-        }
+      setMessages((prev: Message[]) => {
+        if (prev.some((m) => m.id === msg._id)) return prev;
         return [...prev, mapSocketToMessage(msg, currentUser, conversation)];
       });
 
@@ -187,8 +184,9 @@ export default function ChatArea({
       socket.off("user-online", handleUserOnline);
       socket.off("user-offline", handleUserOffline);
     };
-  }, [socket, currentUser, conversation]);
+  }, [socket, currentUser, conversation, setMessages]);
 
+  // Click outside to close message actions
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (!(e.target as HTMLElement).closest(".message-bubble")) {
@@ -199,10 +197,12 @@ export default function ChatArea({
     return () => document.removeEventListener("click", handleClickOutside);
   }, []);
 
+  // Scroll to bottom when messages change
   useEffect(() => {
     if (shouldAutoScroll) scrollToBottom();
   }, [messages, shouldAutoScroll]);
 
+  // Reset scroll when conversation changes
   useEffect(() => {
     if (conversation) {
       setShouldAutoScroll(true);
@@ -210,6 +210,7 @@ export default function ChatArea({
     }
   }, [conversation.id]);
 
+  // Fetch messages for this conversation
   useEffect(() => {
     if (!currentUser || !conversation) return;
 
@@ -217,7 +218,7 @@ export default function ChatArea({
       try {
         const token = localStorage.getItem("authToken");
         const res = await fetch(
-          `https://matrimonial-backend-7ahc.onrender.com/api/message?currentUserId=${conversation.id}`,
+          `${API_BASE_URL}/api/message?currentUserId=${conversation.id}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         if (!res.ok) throw new Error("Failed to fetch messages");
@@ -237,15 +238,16 @@ export default function ChatArea({
     };
 
     fetchMessages();
-  }, [conversation.id, currentUser]);
+  }, [conversation.id, currentUser, setMessages]);
 
+  // Fetch block status
   useEffect(() => {
     if (!conversation) return;
     const fetchBlockStatus = async () => {
       try {
         const token = localStorage.getItem("authToken");
         const res = await fetch(
-          `https://matrimonial-backend-7ahc.onrender.com/api/message/isBlocked/${conversation.id}`,
+          `${API_BASE_URL}/api/message/isBlocked/${conversation.id}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         const data = await res.json();
@@ -262,13 +264,14 @@ export default function ChatArea({
     fetchBlockStatus();
   }, [conversation]);
 
+  // Fetch online status
   useEffect(() => {
     const fetchOnlineStatus = async () => {
       if (!conversation.id) return;
       try {
         const token = localStorage.getItem("authToken");
         const res = await fetch(
-          `https://matrimonial-backend-7ahc.onrender.com/api/message/online`,
+          `${API_BASE_URL}/api/message/online`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         const data = await res.json();
@@ -282,96 +285,80 @@ export default function ChatArea({
     fetchOnlineStatus();
   }, [conversation.id]);
 
- const onSendMessage = async (text: string, files?: File[]) => {
-  if (!currentUser || !conversation.id) return;
-  if (!text.trim() && (!files || files.length === 0)) return;
+  const onSendMessage = async (text: string, files?: File[]) => {
+    if (!currentUser || !conversation.id) return;
+    if (!text.trim() && (!files || files.length === 0)) return;
 
-  const token = localStorage.getItem("authToken");
-  const tempId = "temp-" + Date.now();
+    const token = localStorage.getItem("authToken");
+    const tempId = "temp-" + Date.now();
 
-  const localFiles =
-    files?.length
-      ? files.map((file) => ({
-          fileName: file.name,
-          fileUrl: URL.createObjectURL(file),
-          fileType: file.type,
-          fileSize: file.size,
-        }))
-      : [];
+    const localFiles =
+      files?.length
+        ? files.map((file) => ({
+            fileName: file.name,
+            fileUrl: URL.createObjectURL(file),
+            fileType: file.type,
+            fileSize: file.size,
+          }))
+        : [];
 
-  // ✅ Optimistic UI (ONE TIME ONLY)
-  setMessages((prev) => [
-    ...prev,
-    {
-      id: tempId,
-      senderId: currentUser._id,
-      receiverId: conversation.id,
-      text,
-      timestamp: new Date().toISOString(),
-      sender: "me",
-      avatar: currentUser.profileImage,
-      files: localFiles,
-    },
-  ]);
-
-  scrollToBottom();
-
-  try {
-    // ==============================
-    // 📌 FILE MESSAGE
-    // ==============================
-    if (files && files.length > 0) {
-      const formData = new FormData();
-      formData.append("receiverId", conversation.id);
-
-      if (replyingMessage?.id) {
-        formData.append("replyToId", replyingMessage.id);
-      }
-
-      files.forEach((file) => {
-        formData.append("file", file);
-      });
-
-      // ✅ SOCKET ONLY FOR FILE
-      socket.emit("send-msg", {
-        tempId,
-        from: currentUser._id,
-        to: conversation.id,
-        messageText: text,
-        replyToId: replyingMessage?.id || null,
-      });
-
-      const res = await fetch(
-        "https://matrimonial-backend-7ahc.onrender.com/api/message/send-file",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          body: formData,
-        }
-      );
-
-      const data = await res.json();
-
-      if (data.success) {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === tempId
-              ? mapSocketToMessage(data.data, currentUser, conversation)
-              : m
-          )
-        );
-      }
-      return;
-    }
-
-    // ==============================
-    // 📌 TEXT MESSAGE (API ONLY)
-    // ==============================
-    const res = await fetch(
-      "https://matrimonial-backend-7ahc.onrender.com/api/message",
+    // Optimistic UI
+    setMessages((prev: Message[]) => [
+      ...prev,
       {
+        id: tempId,
+        senderId: currentUser._id,
+        receiverId: conversation.id,
+        text,
+        timestamp: new Date().toISOString(),
+        sender: "me",
+        avatar: currentUser.profileImage,
+        files: localFiles,
+      },
+    ]);
+
+    scrollToBottom();
+
+    try {
+      // File message
+      if (files && files.length > 0) {
+        const formData = new FormData();
+        formData.append("receiverId", conversation.id);
+        if (replyingMessage?.id) {
+          formData.append("replyToId", replyingMessage.id);
+        }
+        files.forEach((file) => formData.append("file", file));
+
+        // Emit socket for real‑time update
+        socket.emit("send-msg", {
+          tempId,
+          from: currentUser._id,
+          to: conversation.id,
+          messageText: text,
+          replyToId: replyingMessage?.id || null,
+        });
+
+        const res = await fetch(`${API_BASE_URL}/api/message/send-file`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          setMessages((prev: Message[]) =>
+            prev.map((m) =>
+              m.id === tempId
+                ? mapSocketToMessage(data.data, currentUser, conversation)
+                : m
+            )
+          );
+        }
+        return;
+      }
+
+      // Text message
+      const res = await fetch(`${API_BASE_URL}/api/message`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -382,43 +369,37 @@ export default function ChatArea({
           messageText: text,
           replyToId: replyingMessage?.id || null,
         }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setMessages((prev: Message[]) =>
+          prev.map((m) =>
+            m.id === tempId
+              ? mapSocketToMessage(data.data, currentUser, conversation)
+              : m
+          )
+        );
       }
-    );
-
-    const data = await res.json();
-
-    if (data.success) {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === tempId
-            ? mapSocketToMessage(data.data, currentUser, conversation)
-            : m
-        )
-      );
+    } catch (err) {
+      console.error("Send message error:", err);
+    } finally {
+      setReplyingMessage(null);
     }
-  } catch (err) {
-    console.error("Send message error:", err);
-  } finally {
-    setReplyingMessage(null);
-  }
-};
-
+  };
 
   const handleBlockUser = async () => {
     if (!conversation.id) return;
     try {
       const token = localStorage.getItem("authToken");
-      const res = await fetch(
-        `https://matrimonial-backend-7ahc.onrender.com/api/message/block`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ otherUserId: conversation.id }),
-        }
-      );
+      const res = await fetch(`${API_BASE_URL}/api/message/block`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ otherUserId: conversation.id }),
+      });
       if (!res.ok) throw new Error("Failed to block user");
       setBlockStatus({ ...blockStatus, iBlocked: true });
       alert("User blocked");
@@ -433,17 +414,14 @@ export default function ChatArea({
     if (!conversation.id) return;
     try {
       const token = localStorage.getItem("authToken");
-      const res = await fetch(
-        `https://matrimonial-backend-7ahc.onrender.com/api/message/unblock`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ otherUserId: conversation.id }),
-        }
-      );
+      const res = await fetch(`${API_BASE_URL}/api/message/unblock`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ otherUserId: conversation.id }),
+      });
       if (!res.ok) throw new Error("Failed to unblock user");
       setBlockStatus({ ...blockStatus, iBlocked: false });
       alert("User unblocked");
@@ -459,17 +437,14 @@ export default function ChatArea({
 
     try {
       const token = localStorage.getItem("authToken");
-      const res = await fetch(
-        `https://matrimonial-backend-7ahc.onrender.com/api/message/delete/chat`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ otherUserId: conversation.id }),
-        }
-      );
+      const res = await fetch(`${API_BASE_URL}/api/message/delete/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ otherUserId: conversation.id }),
+      });
       if (!res.ok) throw new Error("Failed to delete all messages");
 
       setMessages([]);
@@ -488,23 +463,20 @@ export default function ChatArea({
 
   const handleDelete = async (msgId: string) => {
     if (msgId.startsWith("temp-"))
-      return setMessages((prev) => prev.filter((m) => m.id !== msgId));
+      return setMessages((prev: Message[]) => prev.filter((m) => m.id !== msgId));
 
     try {
       const token = localStorage.getItem("authToken");
-      const res = await fetch(
-        `https://matrimonial-backend-7ahc.onrender.com/api/message/delete/message`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ messageId: msgId }),
-        }
-      );
+      const res = await fetch(`${API_BASE_URL}/api/message/delete/message`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ messageId: msgId }),
+      });
       if (!res.ok) throw new Error("Failed to delete message");
-      setMessages((prev) => prev.filter((m) => m.id !== msgId));
+      setMessages((prev: Message[]) => prev.filter((m) => m.id !== msgId));
       setActiveMessageId(null);
     } catch (err: any) {
       console.error(err);
@@ -517,7 +489,6 @@ export default function ChatArea({
     setActiveMessageId(null);
   };
 
-  // REPORT SUBMIT FUNCTION
   const handleSubmitReport = async () => {
     if (!reportTitle.trim() || !reportDescription.trim()) {
       alert("Please fill all required fields");
@@ -529,8 +500,8 @@ export default function ChatArea({
 
     try {
       const token = localStorage.getItem("authToken");
-      const reporterId = currentUser?._id; // Current logged in user
-      const reportedUserId = conversation.id; // User being reported
+      const reporterId = currentUser?._id;
+      const reportedUserId = conversation.id;
 
       if (!reporterId) {
         alert("Please login to submit report");
@@ -543,29 +514,19 @@ export default function ChatArea({
       formData.append("title", reportTitle);
       formData.append("description", reportDescription);
 
-      // Add images if any
-      reportImages.forEach((img, index) => {
-        formData.append("image", img);
-      });
+      reportImages.forEach((img) => formData.append("image", img));
 
-      const res = await fetch(
-        "https://matrimonial-backend-7ahc.onrender.com/api/report/create",
-        {
-          method: "POST",
-          headers: { 
-            "Authorization": `Bearer ${token}`,
-            // Don't set Content-Type for FormData, browser sets it automatically
-          },
-          body: formData,
-        }
-      );
+      const res = await fetch(`${API_BASE_URL}/api/report/create`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
 
       const data = await res.json();
       console.log("Report API Response:", data);
 
       if (data.success) {
         setReportSuccess(true);
-        // Reset form after success
         setTimeout(() => {
           setIsReportOpen(false);
           setReportTitle("");
@@ -649,7 +610,6 @@ export default function ChatArea({
 
           {headerMenuOpen && (
             <div className="absolute right-0 mt-2 w-48 bg-white shadow-xl rounded-xl border z-50 overflow-hidden">
-              {/* REPORT BUTTON */}
               <button
                 onClick={() => {
                   setIsReportOpen(true);
@@ -783,7 +743,7 @@ export default function ChatArea({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Block / Unblock Notice */}
+      {/* Block / Unblock Notices */}
       {blockStatus.blockedMe && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded-md mb-2 text-center">
           You are blocked by this user
@@ -796,7 +756,7 @@ export default function ChatArea({
         </div>
       )}
 
-      {/* Instagram Style Reply Preview */}
+      {/* Reply Preview */}
       {replyingMessage && (
         <div className="px-4 py-2 bg-indigo-50 border-t border-indigo-200 flex items-center justify-between shadow-sm">
           <div className="flex flex-col max-w-[85%]">
@@ -805,7 +765,6 @@ export default function ChatArea({
               {replyingMessage.text || "File / Media"}
             </span>
           </div>
-
           <button
             onClick={() => setReplyingMessage(null)}
             className="text-indigo-500 hover:text-red-500 font-bold"
@@ -815,7 +774,7 @@ export default function ChatArea({
         </div>
       )}
 
-      {/* Input Box */}
+      {/* Message Input */}
       <MessageInput
         onSendMessage={onSendMessage}
         replyingMessage={
@@ -830,15 +789,12 @@ export default function ChatArea({
         to={conversation.id}
       />
 
-      {/* REPORT POPUP MODAL - Same position as before */}
+      {/* Report Modal */}
       {isReportOpen && (
-<div className="absolute inset-0 bg-black/30 flex items-center justify-center z-40 p-4">
-<div className="bg-white rounded-xl w-full max-w-md shadow-xl relative">
-            {/* Modal Header */}
+        <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-40 p-4">
+          <div className="bg-white rounded-xl w-full max-w-md shadow-xl relative">
             <div className="flex items-center justify-between p-6 border-b">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Report User
-              </h3>
+              <h3 className="text-lg font-semibold text-gray-900">Report User</h3>
               <button
                 onClick={() => setIsReportOpen(false)}
                 className="text-gray-400 hover:text-gray-600 text-xl"
@@ -847,8 +803,6 @@ export default function ChatArea({
                 ✕
               </button>
             </div>
-
-            {/* Modal Body */}
             <div className="p-6 space-y-4">
               {reportSuccess ? (
                 <div className="bg-green-50 text-green-700 p-4 rounded text-center">
@@ -857,11 +811,8 @@ export default function ChatArea({
                 </div>
               ) : (
                 <>
-                  {/* Title/Reason */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Reason for Report *
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Reason for Report *</label>
                     <select
                       value={reportTitle}
                       onChange={(e) => setReportTitle(e.target.value)}
@@ -878,12 +829,8 @@ export default function ChatArea({
                       <option value="other">Other</option>
                     </select>
                   </div>
-
-                  {/* Description */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Description *
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
                     <textarea
                       value={reportDescription}
                       onChange={(e) => setReportDescription(e.target.value)}
@@ -894,12 +841,8 @@ export default function ChatArea({
                       disabled={isSubmittingReport}
                     />
                   </div>
-
-                  {/* Image Upload */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Attach Proof Images (Optional)
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Attach Proof Images (Optional)</label>
                     <input
                       type="file"
                       multiple
@@ -908,7 +851,6 @@ export default function ChatArea({
                       className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                       disabled={isSubmittingReport}
                     />
-
                     {reportImages.length > 0 && (
                       <div className="mt-2 flex gap-2 flex-wrap">
                         {reportImages.map((img, i) => (
@@ -933,8 +875,6 @@ export default function ChatArea({
                 </>
               )}
             </div>
-
-            {/* Modal Footer */}
             <div className="flex justify-end space-x-3 p-6 border-t">
               <button
                 onClick={() => setIsReportOpen(false)}
@@ -958,4 +898,4 @@ export default function ChatArea({
       )}
     </div>
   );
-}      
+}
