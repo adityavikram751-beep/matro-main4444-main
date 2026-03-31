@@ -8,7 +8,7 @@ import MessageInput from "./MessageInput";
 import { Eye, Download, FileText, MoreVertical, Flag, X } from "lucide-react";
 import { Conversation, Message, MessageFile, SocketMessage } from "@/types/chat";
 
-const API_BASE_URL = "https://merimonial-backend.onrender.com"; // or use config
+const API_BASE_URL = "https://merimonial-backend.onrender.com";
 
 interface User {
   _id: string;
@@ -23,8 +23,8 @@ interface ChatAreaProps {
   socket: Socket;
   onOpenSidebar: () => void;
   onMessageSent: (conversationId: string, text: string) => void;
-  messages: Message[];           // from parent
-  setMessages: (msgs: Message[] | ((prev: Message[]) => Message[])) => void; // from parent
+  messages: Message[];
+  setMessages: (msgs: Message[] | ((prev: Message[]) => Message[])) => void;
 }
 
 function mapSocketToMessage(
@@ -210,7 +210,7 @@ export default function ChatArea({
     }
   }, [conversation.id]);
 
-  // Fetch messages for this conversation
+  // Fetch messages
   useEffect(() => {
     if (!currentUser || !conversation) return;
 
@@ -252,10 +252,7 @@ export default function ChatArea({
         );
         const data = await res.json();
         if (data.success) {
-          setBlockStatus({
-            iBlocked: data.data.iBlocked,
-            blockedMe: data.data.blockedMe,
-          });
+          setBlockStatus({ iBlocked: data.data.iBlocked, blockedMe: data.data.blockedMe });
         }
       } catch (err) {
         console.error("Failed to fetch block status:", err);
@@ -292,17 +289,15 @@ export default function ChatArea({
     const token = localStorage.getItem("authToken");
     const tempId = "temp-" + Date.now();
 
-    const localFiles =
-      files?.length
-        ? files.map((file) => ({
-            fileName: file.name,
-            fileUrl: URL.createObjectURL(file),
-            fileType: file.type,
-            fileSize: file.size,
-          }))
-        : [];
+    const localFiles = files?.length
+      ? files.map((file) => ({
+          fileName: file.name,
+          fileUrl: URL.createObjectURL(file),
+          fileType: file.type,
+          fileSize: file.size,
+        }))
+      : [];
 
-    // Optimistic UI
     setMessages((prev: Message[]) => [
       ...prev,
       {
@@ -320,16 +315,12 @@ export default function ChatArea({
     scrollToBottom();
 
     try {
-      // File message
       if (files && files.length > 0) {
         const formData = new FormData();
         formData.append("receiverId", conversation.id);
-        if (replyingMessage?.id) {
-          formData.append("replyToId", replyingMessage.id);
-        }
+        if (replyingMessage?.id) formData.append("replyToId", replyingMessage.id);
         files.forEach((file) => formData.append("file", file));
 
-        // Emit socket for real‑time update
         socket.emit("send-msg", {
           tempId,
           from: currentUser._id,
@@ -348,16 +339,13 @@ export default function ChatArea({
         if (data.success) {
           setMessages((prev: Message[]) =>
             prev.map((m) =>
-              m.id === tempId
-                ? mapSocketToMessage(data.data, currentUser, conversation)
-                : m
+              m.id === tempId ? mapSocketToMessage(data.data, currentUser, conversation) : m
             )
           );
         }
         return;
       }
 
-      // Text message
       const res = await fetch(`${API_BASE_URL}/api/message`, {
         method: "POST",
         headers: {
@@ -375,9 +363,7 @@ export default function ChatArea({
       if (data.success) {
         setMessages((prev: Message[]) =>
           prev.map((m) =>
-            m.id === tempId
-              ? mapSocketToMessage(data.data, currentUser, conversation)
-              : m
+            m.id === tempId ? mapSocketToMessage(data.data, currentUser, conversation) : m
           )
         );
       }
@@ -394,10 +380,7 @@ export default function ChatArea({
       const token = localStorage.getItem("authToken");
       const res = await fetch(`${API_BASE_URL}/api/message/block`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ otherUserId: conversation.id }),
       });
       if (!res.ok) throw new Error("Failed to block user");
@@ -405,7 +388,6 @@ export default function ChatArea({
       alert("User blocked");
       setHeaderMenuOpen(false);
     } catch (err: any) {
-      console.error(err);
       alert(`Error: ${err.message}`);
     }
   };
@@ -416,17 +398,13 @@ export default function ChatArea({
       const token = localStorage.getItem("authToken");
       const res = await fetch(`${API_BASE_URL}/api/message/unblock`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ otherUserId: conversation.id }),
       });
       if (!res.ok) throw new Error("Failed to unblock user");
       setBlockStatus({ ...blockStatus, iBlocked: false });
       alert("User unblocked");
     } catch (err: any) {
-      console.error(err);
       alert(`Error: ${err.message}`);
     }
   };
@@ -439,10 +417,7 @@ export default function ChatArea({
       const token = localStorage.getItem("authToken");
       const res = await fetch(`${API_BASE_URL}/api/message/delete/chat`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ otherUserId: conversation.id }),
       });
       if (!res.ok) throw new Error("Failed to delete all messages");
@@ -451,12 +426,8 @@ export default function ChatArea({
       alert("All messages deleted successfully");
       setHeaderMenuOpen(false);
 
-      socket.emit("delete-chat", {
-        from: currentUser?._id,
-        to: conversation.id,
-      });
+      socket.emit("delete-chat", { from: currentUser?._id, to: conversation.id });
     } catch (err: any) {
-      console.error(err);
       alert(`Error: ${err.message}`);
     }
   };
@@ -469,17 +440,13 @@ export default function ChatArea({
       const token = localStorage.getItem("authToken");
       const res = await fetch(`${API_BASE_URL}/api/message/delete/message`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ messageId: msgId }),
       });
       if (!res.ok) throw new Error("Failed to delete message");
       setMessages((prev: Message[]) => prev.filter((m) => m.id !== msgId));
       setActiveMessageId(null);
     } catch (err: any) {
-      console.error(err);
       alert(`Error: ${err.message}`);
     }
   };
@@ -513,7 +480,6 @@ export default function ChatArea({
       formData.append("reportedUser", reportedUserId);
       formData.append("title", reportTitle);
       formData.append("description", reportDescription);
-
       reportImages.forEach((img) => formData.append("image", img));
 
       const res = await fetch(`${API_BASE_URL}/api/report/create`, {
@@ -523,8 +489,6 @@ export default function ChatArea({
       });
 
       const data = await res.json();
-      console.log("Report API Response:", data);
-
       if (data.success) {
         setReportSuccess(true);
         setTimeout(() => {
@@ -565,15 +529,25 @@ export default function ChatArea({
   };
 
   return (
-    <div className="flex flex-col h-full relative">
-      {/* Header */}
-      <div
-        className="bg-white border-b border-gray-200 p-4 shadow-sm flex items-center justify-between relative
-                   max-md:fixed max-md:top-[56px] max-md:left-0 max-md:right-0 max-md:z-40"
-      >
-        <button onClick={onOpenSidebar} className="md:hidden">☰</button>
+    /*
+     * ✅ FIX: h-dvh (dynamic viewport height) handles mobile browsers correctly.
+     * On mobile, 100vh includes the browser chrome (address bar), so content
+     * gets hidden underneath it. dvh = actual visible height. flex-col ensures
+     * header stays top, input stays bottom, messages scroll in between.
+     */
+    <div className="flex flex-col h-dvh md:h-full overflow-hidden relative">
 
-        <div className="flex items-center space-x-3">
+      {/* ── HEADER ── */}
+      {/*
+       * ✅ FIX: Removed max-md:fixed — fixed positioning on mobile was the
+       * main scroll killer. The header was overlapping the messages container
+       * because fixed elements are taken out of normal flow.
+       * Now it just sits at the top of the flex column naturally.
+       */}
+      <div className="bg-white border-b border-gray-200 p-4 shadow-sm flex items-center justify-between relative z-10 flex-shrink-0">
+        <button onClick={onOpenSidebar} className="md:hidden mr-2">☰</button>
+
+        <div className="flex items-center space-x-3 flex-1">
           <div className="relative">
             {conversation.avatar ? (
               <Image
@@ -581,10 +555,10 @@ export default function ChatArea({
                 alt={conversation.name}
                 width={48}
                 height={48}
-                className="w-12 h-12 rounded-full object-cover"
+                className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover"
               />
             ) : (
-              <div className="w-12 h-12 bg-indigo-500 text-white rounded-full flex items-center justify-center">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-indigo-500 text-white rounded-full flex items-center justify-center text-lg font-semibold">
                 {conversation.name?.charAt(0).toUpperCase()}
               </div>
             )}
@@ -593,8 +567,8 @@ export default function ChatArea({
             )}
           </div>
           <div>
-            <h2 className="font-semibold">{conversation.name}</h2>
-            <p className={`text-sm ${conversationOnline ? "text-green-600" : "text-gray-500"}`}>
+            <h2 className="font-semibold text-gray-900">{conversation.name}</h2>
+            <p className={`text-xs sm:text-sm ${conversationOnline ? "text-green-600" : "text-gray-500"}`}>
               {conversationOnline ? "Online" : "Offline"}
             </p>
           </div>
@@ -611,10 +585,7 @@ export default function ChatArea({
           {headerMenuOpen && (
             <div className="absolute right-0 mt-2 w-48 bg-white shadow-xl rounded-xl border z-50 overflow-hidden">
               <button
-                onClick={() => {
-                  setIsReportOpen(true);
-                  setHeaderMenuOpen(false);
-                }}
+                onClick={() => { setIsReportOpen(true); setHeaderMenuOpen(false); }}
                 className="flex items-center w-full text-left px-4 py-2 text-sm hover:bg-gray-100 text-red-600"
               >
                 <Flag size={16} className="mr-2" />
@@ -648,16 +619,26 @@ export default function ChatArea({
         </div>
       </div>
 
-      {/* Messages */}
+      {/* ── MESSAGES AREA ── */}
+      {/*
+       * ✅ FIX: flex-1 + overflow-y-auto = this div takes all remaining space
+       * between header and input, and scrolls independently.
+       * min-h-0 is critical — without it, flex children don't shrink below
+       * their content size, so overflow-y-auto has no effect on mobile.
+       */}
       <div
         ref={messagesContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 scroll-smooth"
+        className="flex-1 overflow-y-auto min-h-0 p-3 sm:p-4 space-y-4 bg-gray-50"
       >
         {isLoading ? (
-          <p className="text-center text-gray-500">Loading messages...</p>
+          <div className="flex items-center justify-center h-full">
+            <p className="text-gray-500 text-sm">Loading messages...</p>
+          </div>
         ) : messages.length === 0 ? (
-          <p className="text-center text-gray-500">No messages yet</p>
+          <div className="flex items-center justify-center h-full">
+            <p className="text-gray-500 text-sm">No messages yet. Say hi! 👋</p>
+          </div>
         ) : (
           messages.map((msg) => {
             const isMe = msg.sender === "me";
@@ -667,40 +648,88 @@ export default function ChatArea({
                 className={`flex ${isMe ? "justify-end" : "justify-start"} message-bubble`}
                 onClick={() => setActiveMessageId(msg.id === activeMessageId ? null : msg.id)}
               >
+                {/* Left avatar for other user */}
+                {!isMe && (
+                  <img
+                    src={msg.avatar || "/default-avatar.png"}
+                    className="w-8 h-8 rounded-full object-cover flex-shrink-0 mr-2 self-end"
+                    alt="avatar"
+                  />
+                )}
+
                 <div
-                  className={`max-w-xs lg:max-w-md p-3 rounded-2xl ${
-                    isMe ? "bg-indigo-500 text-white" : "bg-white shadow-sm border"
-                  } ${replyingMessage?.id === msg.id ? "ring-2 ring-indigo-400" : ""} relative`}
+                  className={`
+                    relative p-3 rounded-2xl break-words
+                    max-w-[80%] sm:max-w-xs lg:max-w-md
+                    ${isMe
+                      ? "bg-indigo-500 text-white rounded-br-sm"
+                      : "bg-white shadow-sm border rounded-bl-sm"
+                    }
+                    ${replyingMessage?.id === msg.id ? "ring-2 ring-indigo-400" : ""}
+                  `}
                 >
+                  {/* Reply preview */}
                   {msg.replyTo && (
-                    <div className="bg-indigo-100 text-indigo-800 p-2 rounded mb-1 border-l-4 border-indigo-500 text-xs font-medium truncate">
+                    <div className="bg-indigo-100 text-indigo-800 p-2 rounded mb-2 border-l-4 border-indigo-500 text-xs font-medium truncate max-w-[200px]">
                       {msg.replyTo.text || "File/Media"}
                     </div>
                   )}
 
-                  {msg.text && <p className="text-sm mb-1">{msg.text}</p>}
+                  {/* Text */}
+                  {msg.text && (
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap mb-1">{msg.text}</p>
+                  )}
 
+                  {/* Files */}
                   {msg.files && msg.files.length > 0 && (
                     <div className="space-y-2 mt-2">
                       {msg.files.map((file, i) => (
-                        <div key={i} className="border rounded-lg overflow-hidden relative">
+                        <div key={i} className="border rounded-lg overflow-hidden">
                           {isImage(file.fileType) ? (
-                            <img
-                              src={file.fileUrl}
-                              alt={file.fileName}
-                              className="w-full h-auto max-h-40 object-cover cursor-pointer"
-                              onClick={() => window.open(file.fileUrl, "_blank")}
-                            />
+                            <div className="relative">
+                              <img
+                                src={file.fileUrl}
+                                alt={file.fileName}
+                                className="w-full object-cover max-h-48 sm:max-h-64 rounded-lg cursor-pointer"
+                                onClick={(e) => { e.stopPropagation(); window.open(file.fileUrl, "_blank"); }}
+                              />
+                              <div className="absolute top-2 right-2 flex gap-1">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); window.open(file.fileUrl, "_blank"); }}
+                                  className="p-1 bg-black/50 text-white rounded hover:bg-black/70"
+                                >
+                                  <Eye size={14} />
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleDownload(file.fileUrl, file.fileName); }}
+                                  className="p-1 bg-black/50 text-white rounded hover:bg-black/70"
+                                >
+                                  <Download size={14} />
+                                </button>
+                              </div>
+                            </div>
                           ) : (
-                            <div className="flex items-center gap-3 p-2 bg-gray-50">
-                              <FileText size={20} className="text-gray-600" />
+                            <div className={`flex items-center gap-3 p-2 ${isMe ? "bg-indigo-600" : "bg-gray-50"}`}>
+                              <FileText size={20} className={isMe ? "text-white" : "text-gray-600"} />
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium truncate">{file.fileName}</p>
-                                <p className="text-xs text-gray-500">{(file.fileSize / 1024).toFixed(1)} KB</p>
+                                <p className={`text-xs ${isMe ? "text-white/70" : "text-gray-500"}`}>
+                                  {(file.fileSize / 1024).toFixed(1)} KB
+                                </p>
                               </div>
                               <div className="flex gap-1">
-                                <button onClick={() => window.open(file.fileUrl, "_blank")}><Eye size={14} /></button>
-                                <button onClick={() => handleDownload(file.fileUrl, file.fileName)}><Download size={14} /></button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); window.open(file.fileUrl, "_blank"); }}
+                                  className={`p-1 rounded ${isMe ? "hover:bg-white/20" : "hover:bg-gray-200"}`}
+                                >
+                                  <Eye size={14} />
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleDownload(file.fileUrl, file.fileName); }}
+                                  className={`p-1 rounded ${isMe ? "hover:bg-white/20" : "hover:bg-gray-200"}`}
+                                >
+                                  <Download size={14} />
+                                </button>
                               </div>
                             </div>
                           )}
@@ -709,26 +738,27 @@ export default function ChatArea({
                     </div>
                   )}
 
-                  <p className="text-xs mt-1 text-gray-300">{formatTime(msg.timestamp)}</p>
+                  {/* Timestamp */}
+                  <p className={`text-[10px] sm:text-xs mt-1 ${isMe ? "text-white/70" : "text-gray-400"}`}>
+                    {formatTime(msg.timestamp)}
+                  </p>
 
+                  {/* Action popup (reply / delete) */}
                   {activeMessageId === msg.id && (
-                    <div className="absolute top-0 right-0 bg-white border shadow-lg rounded-md text-sm z-50 flex flex-col overflow-hidden">
+                    <div className={`
+                      absolute top-0 z-50 bg-white border shadow-lg rounded-md text-sm flex flex-col overflow-hidden
+                      ${isMe ? "right-full mr-2" : "left-full ml-2"}
+                    `}>
                       <button
-                        className="px-3 py-1 hover:bg-gray-100 text-black"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleReply(msg);
-                        }}
+                        className="px-3 py-2 hover:bg-gray-100 text-black text-left"
+                        onClick={(e) => { e.stopPropagation(); handleReply(msg); }}
                       >
                         Reply
                       </button>
                       {isMe && (
                         <button
-                          className="px-3 py-1 hover:bg-gray-100 text-red-500"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(msg.id);
-                          }}
+                          className="px-3 py-2 hover:bg-gray-100 text-red-500 text-left"
+                          onClick={(e) => { e.stopPropagation(); handleDelete(msg.id); }}
                         >
                           Delete
                         </button>
@@ -736,6 +766,15 @@ export default function ChatArea({
                     </div>
                   )}
                 </div>
+
+                {/* Right avatar for me */}
+                {isMe && (
+                  <img
+                    src={msg.avatar || "/default-avatar.png"}
+                    className="w-8 h-8 rounded-full object-cover flex-shrink-0 ml-2 self-end"
+                    alt="avatar"
+                  />
+                )}
               </div>
             );
           })
@@ -743,81 +782,84 @@ export default function ChatArea({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Block / Unblock Notices */}
+      {/* ── BLOCK / UNBLOCK NOTICES ── */}
       {blockStatus.blockedMe && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded-md mb-2 text-center">
+        <div className="flex-shrink-0 bg-red-100 border-t border-red-300 text-red-700 px-4 py-2 text-center text-sm">
           You are blocked by this user
         </div>
       )}
       {blockStatus.iBlocked && !blockStatus.blockedMe && (
-        <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-2 rounded-md mb-2 text-center flex justify-center items-center gap-2">
+        <div className="flex-shrink-0 bg-yellow-100 border-t border-yellow-300 text-yellow-700 px-4 py-2 text-center text-sm flex justify-center items-center gap-2">
           <span>You have blocked this user.</span>
-          <button onClick={handleUnblockUser} className="text-yellow-700 underline font-semibold">Unblock</button>
+          <button onClick={handleUnblockUser} className="underline font-semibold">Unblock</button>
         </div>
       )}
 
-      {/* Reply Preview */}
+      {/* ── REPLY PREVIEW ── */}
       {replyingMessage && (
-        <div className="px-4 py-2 bg-indigo-50 border-t border-indigo-200 flex items-center justify-between shadow-sm">
+        <div className="flex-shrink-0 px-4 py-2 bg-indigo-50 border-t border-indigo-200 flex items-center justify-between">
           <div className="flex flex-col max-w-[85%]">
-            <span className="text-[11px] text-indigo-700">Replying to</span>
-            <span className="text-sm font-semibold text-indigo-900 truncate">
+            <span className="text-[11px] text-indigo-600 font-medium">Replying to</span>
+            <span className="text-sm text-indigo-900 truncate">
               {replyingMessage.text || "File / Media"}
             </span>
           </div>
           <button
             onClick={() => setReplyingMessage(null)}
-            className="text-indigo-500 hover:text-red-500 font-bold"
+            className="text-indigo-400 hover:text-red-500 ml-2"
           >
-            ✕
+            <X size={18} />
           </button>
         </div>
       )}
 
-      {/* Message Input */}
-      <MessageInput
-        onSendMessage={onSendMessage}
-        replyingMessage={
-          replyingMessage
-            ? { text: replyingMessage.text || "", id: replyingMessage.id }
-            : undefined
-        }
-        onCancelReply={() => setReplyingMessage(null)}
-        disabled={blockStatus.blockedMe || blockStatus.iBlocked}
-        socket={socket}
-        currentUser={currentUser}
-        to={conversation.id}
-      />
+      {/* ── MESSAGE INPUT ── */}
+      {/* flex-shrink-0 ensures input is never pushed off screen */}
+      <div className="flex-shrink-0">
+        <MessageInput
+          onSendMessage={onSendMessage}
+          replyingMessage={
+            replyingMessage
+              ? { text: replyingMessage.text || "", id: replyingMessage.id }
+              : undefined
+          }
+          onCancelReply={() => setReplyingMessage(null)}
+          disabled={blockStatus.blockedMe || blockStatus.iBlocked}
+          socket={socket}
+          currentUser={currentUser}
+          to={conversation.id}
+        />
+      </div>
 
-      {/* Report Modal */}
+      {/* ── REPORT MODAL ── */}
       {isReportOpen && (
-        <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-40 p-4">
-          <div className="bg-white rounded-xl w-full max-w-md shadow-xl relative">
-            <div className="flex items-center justify-between p-6 border-b">
+        <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-md shadow-xl relative max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b sticky top-0 bg-white z-10">
               <h3 className="text-lg font-semibold text-gray-900">Report User</h3>
               <button
                 onClick={() => setIsReportOpen(false)}
-                className="text-gray-400 hover:text-gray-600 text-xl"
+                className="text-gray-400 hover:text-gray-600"
                 disabled={isSubmittingReport}
               >
-                ✕
+                <X size={20} />
               </button>
             </div>
-            <div className="p-6 space-y-4">
+
+            <div className="p-5 space-y-4">
               {reportSuccess ? (
-                <div className="bg-green-50 text-green-700 p-4 rounded text-center">
-                  <div className="text-lg font-semibold mb-2">✓ Report Submitted Successfully!</div>
-                  <p>Your report has been received and will be reviewed by our team.</p>
+                <div className="bg-green-50 text-green-700 p-4 rounded-lg text-center">
+                  <div className="text-lg font-semibold mb-1">✓ Report Submitted!</div>
+                  <p className="text-sm">Your report will be reviewed by our team.</p>
                 </div>
               ) : (
                 <>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Reason for Report *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Reason *</label>
                     <select
                       value={reportTitle}
                       onChange={(e) => setReportTitle(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                       disabled={isSubmittingReport}
                     >
                       <option value="">Select a reason</option>
@@ -829,32 +871,33 @@ export default function ChatArea({
                       <option value="other">Other</option>
                     </select>
                   </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
                     <textarea
                       value={reportDescription}
                       onChange={(e) => setReportDescription(e.target.value)}
-                      placeholder="Please provide detailed information about the issue..."
+                      placeholder="Describe the issue in detail..."
                       rows={4}
-                      className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm resize-none"
                       disabled={isSubmittingReport}
                     />
                   </div>
+
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Attach Proof Images (Optional)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Proof Images (Optional)</label>
                     <input
                       type="file"
                       multiple
                       accept="image/*"
                       onChange={(e) => setReportImages(Array.from(e.target.files || []))}
-                      className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                      className="w-full text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                       disabled={isSubmittingReport}
                     />
                     {reportImages.length > 0 && (
                       <div className="mt-2 flex gap-2 flex-wrap">
                         {reportImages.map((img, i) => (
-                          <div key={i} className="relative w-16 h-16 rounded overflow-hidden border group">
+                          <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border group">
                             <img
                               src={URL.createObjectURL(img)}
                               className="w-full h-full object-cover"
@@ -875,24 +918,25 @@ export default function ChatArea({
                 </>
               )}
             </div>
-            <div className="flex justify-end space-x-3 p-6 border-t">
-              <button
-                onClick={() => setIsReportOpen(false)}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded transition"
-                disabled={isSubmittingReport}
-              >
-                Cancel
-              </button>
-              {!reportSuccess && (
+
+            {!reportSuccess && (
+              <div className="flex justify-end gap-3 p-5 border-t">
+                <button
+                  onClick={() => setIsReportOpen(false)}
+                  className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition"
+                  disabled={isSubmittingReport}
+                >
+                  Cancel
+                </button>
                 <button
                   onClick={handleSubmitReport}
                   disabled={isSubmittingReport || !reportTitle.trim() || !reportDescription.trim()}
-                  className="px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded transition disabled:opacity-50"
+                  className="px-4 py-2 text-sm bg-red-600 text-white hover:bg-red-700 rounded-lg transition disabled:opacity-50"
                 >
-                  {isSubmittingReport ? 'Submitting...' : 'Submit Report'}
+                  {isSubmittingReport ? "Submitting..." : "Submit Report"}
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       )}
