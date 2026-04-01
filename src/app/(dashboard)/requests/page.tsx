@@ -423,17 +423,11 @@ export default function MatrimonialApp() {
     }
   }
 
-  // ✅ FIXED CHAT FUNCTION
+  // ✅ CHAT FUNCTION
   function handleChat(profile: Profile) {
     if (typeof window === "undefined") return;
-
-    // Log to debug
     console.log("Opening chat for profile:", profile);
-    
-    // Store profile in localStorage for the chat page to use
     localStorage.setItem("chatUser", JSON.stringify(profile));
-    
-    // Use relative path - Next.js router handles base URL
     router.push(`/messages?userId=${profile.id}&name=${encodeURIComponent(profile.name)}`);
   }
 
@@ -550,18 +544,32 @@ export default function MatrimonialApp() {
 
             {activeTab === "Sent" && (
               <div className="w-full flex flex-col gap-3">
-                <div className="w-full h-11 flex items-center justify-between px-4 rounded-full border-2 border-[#8E2E37] opacity-70 cursor-not-allowed">
-                  <span className="text-sm font-Lato text-black">Pending</span>
-                  <ClockFading className="w-5 h-5 text-black" />
-                </div>
-
-                <button
-                  onClick={() => handleDelete(profile)}
-                  className="group w-full h-11 flex items-center justify-between px-4 rounded-full border-2 border-[#8E2E37] transition hover:bg-[#8E2E37]"
-                >
-                  <span className="text-sm font-Lato text-black group-hover:text-white">Delete</span>
-                  <Trash className="w-5 h-5 text-black group-hover:text-white" />
-                </button>
+                {profile.status === "accepted" ? (
+                  <>
+                    <button
+                      onClick={() => handleChat(profile)}
+                      className="group w-full h-11 flex items-center justify-between px-4 rounded-full border-2 border-[#8E2E37] transition hover:bg-[#8E2E37]"
+                    >
+                      <span className="text-sm font-Lato text-black group-hover:text-white">Chat</span>
+                      <MessageCircleMore className="w-5 h-5 text-black group-hover:text-white" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(profile)}
+                      className="group w-full h-11 flex items-center justify-between px-4 rounded-full border-2 border-[#8E2E37] transition hover:bg-[#8E2E37]"
+                    >
+                      <span className="text-sm font-Lato text-black group-hover:text-white">Delete</span>
+                      <Trash className="w-5 h-5 text-black group-hover:text-white" />
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => handleDelete(profile)}
+                    className="group w-full h-11 flex items-center justify-between px-4 rounded-full border-2 border-[#8E2E37] transition hover:bg-[#8E2E37]"
+                  >
+                    <span className="text-sm font-Lato text-black group-hover:text-white">Delete</span>
+                    <Trash className="w-5 h-5 text-black group-hover:text-white" />
+                  </button>
+                )}
               </div>
             )}
 
