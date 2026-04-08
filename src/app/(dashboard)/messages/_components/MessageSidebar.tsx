@@ -7,7 +7,7 @@ import Image from "next/image";
 import { Conversation, UserType } from "@/types/chat";
 import { Socket } from "socket.io-client";
 
-const API_BASE_URL = "https://merimonial-backend.onrender.com"; // or your actual backend
+const API_BASE_URL = "https://merimonial-backend.onrender.com"; 
 
 interface MessageSidebarProps {
   conversations: Conversation[];
@@ -15,8 +15,8 @@ interface MessageSidebarProps {
   currentUser: UserType | null;
   onSelectConversation: (conversation: Conversation) => void;
   onCloseSidebar: () => void;
-  onRetry: () => void;          // retry function
-  onLogout: () => void;         // added logout handler
+  onRetry: () => void;          
+  onLogout: () => void;         
   socket: Socket;
 }
 
@@ -34,7 +34,7 @@ export default function MessageSidebar({
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Real‑time online status via socket
+  
   useEffect(() => {
     if (!socket) return;
 
@@ -56,7 +56,7 @@ export default function MessageSidebar({
     };
   }, [socket]);
 
-  // Initial online users fetch (polling fallback)
+ 
   useEffect(() => {
     const fetchOnlineUsers = async () => {
       try {
