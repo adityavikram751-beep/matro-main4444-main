@@ -1,4 +1,3 @@
-// app/(dashboard)/messages/page.tsx (or wherever your chat page lives)
 "use client";
 
 import { useState, useEffect } from "react";
