@@ -9,11 +9,6 @@ interface Step7Props {
   profileImage: File | string | null;
   setProfileImage: (file: File | string | null) => void;
 
-  adhaarCardFrontImage: File | null;
-  setAdhaarCardFrontImage: (file: File | null) => void;
-
-  adhaarCardBackImage: File | null;
-  setAdhaarCardBackImage: (file: File | null) => void;
 
   onBack: () => void;
   handleContinue: () => void;
@@ -26,10 +21,6 @@ interface Step7Props {
 const Step7Form: React.FC<Step7Props> = ({
   profileImage,
   setProfileImage,
-  adhaarCardFrontImage,
-  setAdhaarCardFrontImage,
-  adhaarCardBackImage,
-  setAdhaarCardBackImage,
   onBack,
   handleContinue,
   onClose,
@@ -44,19 +35,10 @@ const Step7Form: React.FC<Step7Props> = ({
         onClick={onClose}
         className="absolute top-3 right-3 p-2 rounded-full hover:bg-gray-200 transition"
       >
-        <X className="w-5 h-5 text-gray-600" />
       </button>
 
       {/* HEADER */}
-      <div className="flex items-center gap-3 mb-4">
-        <button type="button" onClick={onBack}>
-          <ArrowLeft className="h-5 w-5 text-gray-500 hover:text-rose-600 transition" />
-        </button>
-
-        <h2 className="text-xl font-semibold text-gray-900">
-          Aadhaar & Photo Verification
-        </h2>
-      </div>
+    
 
       {/* PROFILE IMAGE */}
       <div>
@@ -81,51 +63,7 @@ const Step7Form: React.FC<Step7Props> = ({
         )}
       </div>
 
-      {/* AADHAAR FRONT */}
-      <div>
-        <Label className="text-sm font-medium text-gray-700 mb-2 block">
-          Aadhaar Front *
-        </Label>
-
-        <div className="relative">
-          <Input
-            type="file"
-            accept="image/*"
-            onChange={(e) =>
-              e.target.files && setAdhaarCardFrontImage(e.target.files[0])
-            }
-            className="bg-white"
-          />
-          <Upload className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
-        </div>
-
-        {adhaarCardFrontImage && (
-          <p className="text-sm mt-1 text-gray-600">{adhaarCardFrontImage.name}</p>
-        )}
-      </div>
-
-      {/* AADHAAR BACK */}
-      <div>
-        <Label className="text-sm font-medium text-gray-700 mb-2 block">
-          Aadhaar Back *
-        </Label>
-
-        <div className="relative">
-          <Input
-            type="file"
-            accept="image/*"
-            onChange={(e) =>
-              e.target.files && setAdhaarCardBackImage(e.target.files[0])
-            }
-            className="bg-white"
-          />
-          <Upload className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
-        </div>
-
-        {adhaarCardBackImage && (
-          <p className="text-sm mt-1 text-gray-600">{adhaarCardBackImage.name}</p>
-        )}
-      </div>
+    
 
       {/* ERROR MESSAGE */}
       {errorMessage && (

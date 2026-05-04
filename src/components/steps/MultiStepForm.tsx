@@ -57,9 +57,7 @@ export default function MultiStepForm({ onClose, onSuccess }: MultiStepFormProps
   const [designation, setDesignation] = useState('');
 
   const [profileImage, setProfileImage] = useState<File | string | null>(null);
-  const [adhaarCardFrontImage, setAdhaarCardFrontImage] = useState<File | null>(null);
-  const [adhaarCardBackImage, setAdhaarCardBackImage] = useState<File | null>(null);
-
+  
   /* ---------------- NAVIGATION ---------------- */
   const handleBack = () => {
     if (step > 1) setStep(step - 1);
@@ -116,9 +114,7 @@ export default function MultiStepForm({ onClose, onSuccess }: MultiStepFormProps
     formData.append('designation', designation);
 
     if (profileImage instanceof File) formData.append('profileImage', profileImage);
-    if (adhaarCardFrontImage) formData.append('adhaarCardFrontImage', adhaarCardFrontImage);
-    if (adhaarCardBackImage) formData.append('adhaarCardBackImage', adhaarCardBackImage);
-
+  
     try {
       const res = await fetch(
         'https://merimonial-backend.onrender.com/auth/profile',
@@ -282,10 +278,7 @@ export default function MultiStepForm({ onClose, onSuccess }: MultiStepFormProps
             <Step7Form
               profileImage={profileImage}
               setProfileImage={setProfileImage}
-              adhaarCardFrontImage={adhaarCardFrontImage}
-              setAdhaarCardFrontImage={setAdhaarCardFrontImage}
-              adhaarCardBackImage={adhaarCardBackImage}
-              setAdhaarCardBackImage={setAdhaarCardBackImage}
+           
               handleContinue={handleSubmit}
               onBack={handleBack}
               onClose={onClose}
